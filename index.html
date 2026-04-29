@@ -131,13 +131,11 @@ canvas { display: block; cursor: pointer; }
 #upgrade-row button { padding: 4px 12px; font-size: 0.78rem; }
 
 #goal-display {
-  font-size: 0.82rem;
-  color: #80cbc4;
-  padding: 6px 14px;
-  border: 1px solid #1e3a38;
-  border-radius: 8px;
+  font-size: 0.76rem;
+  color: #4a6a68;
+  text-align: center;
 }
-#goal-display.done { color: #a5d6a7; border-color: #2e5a30; }
+#goal-display.done { color: #80cbc4; }
 </style>
 </head>
 <body>
@@ -155,6 +153,8 @@ canvas { display: block; cursor: pointer; }
   <button id="btn-restart">Restart</button>
 </div>
 
+<div id="goal-display">Goal: —</div>
+
 <canvas id="canvas"></canvas>
 
 <div id="legend">
@@ -162,8 +162,6 @@ canvas { display: block; cursor: pointer; }
   <div class="leg"><div class="leg-dot" style="background:#ef5350"></div><span>AI (red)</span></div>
   <div class="leg"><span>4 energy → explosion</span></div>
 </div>
-
-<div id="goal-display">Goal: —</div>
 
 <div id="upgrade-row">
   <strong>Overcharge</strong>
