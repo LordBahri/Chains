@@ -99,21 +99,123 @@ const CANVAS_SIZE = GRID * CELL + PAD * 2;
 
 const COLORS = {
   bg:        '#0f0f23',
-  empty:     '#111128',
-  playerBg:  '#0c2740',
-  aiBg:      '#380c0c',
   gridLine:  '#252545',
   playerDot: '#4fc3f7',
   aiDot:     '#ef5350',
   hover:     'rgba(255,255,255,0.06)',
 };
 
+// Cell background colors as RGB triples — used for smooth interpolation.
+const BG_RGB = {
+  null:   [17,  17,  40],   // #111128
+  player: [12,  39,  64],   // #0c2740
+  ai:     [56,  12,  12],   // #380c0c
+};
+
+// ─── Color Utilities ──────────────────────────────────────────────────────────
+
+function lerpRGB([r1,g1,b1], [r2,g2,b2], t) {
+  return [r1 + (r2-r1)*t | 0, g1 + (g2-g1)*t | 0, b1 + (b2-b1)*t | 0];
+}
+
+function rgbStr([r, g, b]) { return `rgb(${r},${g},${b})`; }
+
+function easeOut(t) { return 1 - (1-t) * (1-t); }
+
+// ─── Animation State ──────────────────────────────────────────────────────────
+
+let effects   = [];  // expanding ring objects
+let particles = [];  // energy orbs flying between cells
+let flashes   = [];  // brief cell-fill overlays on explosion
+let cellTr    = makeTrGrid();  // per-cell color transition state
+let shake     = null;          // { amplitude, born, life }
+let renderTime = 0;            // timestamp from the current RAF frame
+
+function makeTrGrid() {
+  return Array.from({ length: GRID }, () => new Array(GRID).fill(null));
+}
+
+// ─── Animation: Spawners ──────────────────────────────────────────────────────
+
+// Three staggered rings + a cell flash, fired when a cell explodes.
+function spawnExplosion(r, c, owner) {
+  const [x, y, w, h] = cellRect(r, c);
+  const cx = x + w/2, cy = y + h/2;
+  const color = ownerDotColor(owner);
+  const now = performance.now();
+
+  for (let i = 0; i < 3; i++) {
+    effects.push({ x: cx, y: cy, color, born: now + i * 75, life: 430 });
+  }
+  flashes.push({ r, c, color, born: now, life: 220 });
+}
+
+// Small orbs that fly from the exploding cell toward each of its neighbors.
+function spawnParticles(r, c, owner) {
+  const [sx, sy, sw, sh] = cellRect(r, c);
+  const srcX = sx + sw/2, srcY = sy + sh/2;
+  const color = ownerDotColor(owner);
+  const now = performance.now();
+  for (const [nr, nc] of neighbors(r, c)) {
+    const [tx, ty, tw, th] = cellRect(nr, nc);
+    particles.push({ x: srcX, y: srcY, tx: tx+tw/2, ty: ty+th/2,
+                     color, born: now, life: 185 });
+  }
+}
+
+// Accumulate shake; a chain builds amplitude up to a cap.
+function triggerShake() {
+  const amp = shake ? Math.min(8, shake.amplitude + 3) : 4;
+  shake = { amplitude: amp, born: performance.now(), life: 380 };
+}
+
+// Begin a color transition for one cell, picking up from wherever it currently is
+// so a mid-flight transition doesn't snap.
+function startOwnerTransition(r, c, fromOwner, toOwner) {
+  const now = performance.now();
+  const tr  = cellTr[r][c];
+  const from = tr
+    ? lerpRGB(tr.from, tr.to, easeOut(Math.min(1, (now - tr.born) / tr.life)))
+    : [...BG_RGB[fromOwner]];
+  cellTr[r][c] = { from, to: BG_RGB[toOwner], born: now, life: 280 };
+}
+
+// Diff two grids and start transitions for every cell whose owner changed.
+// Must be called with the old grid captured *before* state.grid is updated.
+function applyOwnerTransitions(oldGrid, newGrid) {
+  for (let r = 0; r < GRID; r++)
+    for (let c = 0; c < GRID; c++)
+      if (oldGrid[r][c].owner !== newGrid[r][c].owner)
+        startOwnerTransition(r, c, oldGrid[r][c].owner, newGrid[r][c].owner);
+}
+
+// ─── Animation: Queries ───────────────────────────────────────────────────────
+
+function getShakeOffset() {
+  if (!shake) return [0, 0];
+  const t = (renderTime - shake.born) / shake.life;
+  if (t >= 1) { shake = null; return [0, 0]; }
+  const decay = (1 - t) * (1 - t);
+  return [
+    Math.sin(t * 30) * shake.amplitude * decay,
+    Math.sin(t * 23) * shake.amplitude * decay * 0.55,
+  ];
+}
+
+function getCellBgColor(r, c) {
+  const tr    = cellTr[r][c];
+  const owner = state.grid[r][c].owner;
+  if (!tr) return rgbStr(BG_RGB[owner]);
+  const t = easeOut(Math.min(1, (renderTime - tr.born) / tr.life));
+  if (t >= 1) { cellTr[r][c] = null; return rgbStr(BG_RGB[owner]); }
+  return rgbStr(lerpRGB(tr.from, tr.to, t));
+}
+
 // ─── State ────────────────────────────────────────────────────────────────────
 
-let state   = null;   // game state object
-let hoverCell = null; // [r, c] | null — grid cell under the mouse
-let effects = [];     // active explosion ring effects
-let busy    = false;  // true while a move + AI response is in progress
+let state     = null;
+let hoverCell = null;
+let busy      = false;
 
 function newState() {
   return {
@@ -216,7 +318,7 @@ function computeAIMove(grid) {
   let bestMoves = [], bestEnergy = -1;
   for (const [r, c] of moves) {
     const e = grid[r][c].energy;
-    if (e > bestEnergy)       { bestEnergy = e; bestMoves = [[r, c]]; }
+    if (e > bestEnergy)        { bestEnergy = e; bestMoves = [[r, c]]; }
     else if (e === bestEnergy) { bestMoves.push([r, c]); }
   }
   if (bestMoves.length) return pickRandom(bestMoves);
@@ -225,7 +327,7 @@ function computeAIMove(grid) {
   return pickRandom(moves);
 }
 
-// ─── Rendering ────────────────────────────────────────────────────────────────
+// ─── Rendering: Helpers ───────────────────────────────────────────────────────
 
 const canvas = document.getElementById('canvas');
 const ctx    = canvas.getContext('2d');
@@ -240,7 +342,7 @@ function ownerDotColor(owner) {
   return owner === 'player' ? COLORS.playerDot : COLORS.aiDot;
 }
 
-// Returns canvas positions for 1–4 dots laid out within a cell center.
+// Returns canvas positions for 1–4 dots arranged within a cell center.
 function dotPositions(count, cx, cy) {
   const s = 20;
   switch (count) {
@@ -251,14 +353,20 @@ function dotPositions(count, cx, cy) {
   }
 }
 
+// ─── Rendering: Draw Functions ────────────────────────────────────────────────
+
 function drawDots(x, y, w, h, cell) {
   const color = ownerDotColor(cell.owner);
+  // Slow per-cell phase offset so dots breathe out of sync with each other.
+  const phase  = (x * 0.31 + y * 0.19) * 0.05;
+  const pulse  = 0.5 + 0.5 * Math.sin(renderTime * 0.002 + phase);
   ctx.fillStyle   = color;
   ctx.shadowColor = color;
-  ctx.shadowBlur  = 8;
+  ctx.shadowBlur  = 6 + pulse * 8;
+  const radius = 6.5 + pulse;
   for (const [dx, dy] of dotPositions(Math.min(cell.energy, 4), x + w/2, y + h/2)) {
     ctx.beginPath();
-    ctx.arc(dx, dy, 7, 0, Math.PI * 2);
+    ctx.arc(dx, dy, radius, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.shadowBlur = 0;
@@ -272,9 +380,7 @@ function drawCell(r, c) {
                       && state.phase === 'input' && state.turn === 'player'
                       && canPlay(state.grid, r, c, 'player');
 
-  ctx.fillStyle = cell.owner === 'player' ? COLORS.playerBg
-                : cell.owner === 'ai'     ? COLORS.aiBg
-                : COLORS.empty;
+  ctx.fillStyle = getCellBgColor(r, c);
   ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
 
   if (isHoverable) {
@@ -300,26 +406,58 @@ function drawGridLines() {
   }
 }
 
-function drawScene() {
-  ctx.fillStyle = COLORS.bg;
-  ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
-  for (let r = 0; r < GRID; r++)
-    for (let c = 0; c < GRID; c++)
-      drawCell(r, c);
-  drawGridLines();
+// Bright fill that fades on the cell that just exploded.
+function drawFlashes(timestamp) {
+  flashes = flashes.filter(f => {
+    const t = (timestamp - f.born) / f.life;
+    if (t >= 1) return false;
+    const [x, y, w, h] = cellRect(f.r, f.c);
+    ctx.globalAlpha = (1 - t) * 0.65;
+    ctx.fillStyle   = f.color;
+    ctx.shadowColor = f.color;
+    ctx.shadowBlur  = 22;
+    ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur  = 0;
+    return true;
+  });
 }
 
+// Small orbs travelling from exploding cell to each neighbor.
+function drawParticles(timestamp) {
+  particles = particles.filter(p => {
+    const t = (timestamp - p.born) / p.life;
+    if (t >= 1) return false;
+    // Ease-in-out so orbs accelerate then decelerate into target.
+    const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+    const x = p.x + (p.tx - p.x) * ease;
+    const y = p.y + (p.ty - p.y) * ease;
+    ctx.globalAlpha = t < 0.7 ? 1 : (1 - t) / 0.3;
+    ctx.fillStyle   = p.color;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur  = 8;
+    ctx.beginPath();
+    ctx.arc(x, y, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur  = 0;
+    return true;
+  });
+}
+
+// Expanding rings; each effect has an optional `born` delay for staggering.
 function drawEffects(timestamp) {
   effects = effects.filter(effect => {
     const t = (timestamp - effect.born) / effect.life;
+    if (t < 0)  return true;   // delayed ring not yet started
     if (t >= 1) return false;
-    ctx.globalAlpha = (1 - t) * 0.85;
+    ctx.globalAlpha = (1 - t) * 0.8;
     ctx.strokeStyle = effect.color;
     ctx.shadowColor = effect.color;
-    ctx.shadowBlur  = 12;
+    ctx.shadowBlur  = 14;
     ctx.lineWidth   = 2.5;
     ctx.beginPath();
-    ctx.arc(effect.x, effect.y, 6 + t * 44, 0, Math.PI * 2);
+    ctx.arc(effect.x, effect.y, 5 + t * 38, 0, Math.PI * 2);
     ctx.stroke();
     ctx.globalAlpha = 1;
     ctx.shadowBlur  = 0;
@@ -327,20 +465,28 @@ function drawEffects(timestamp) {
   });
 }
 
-function spawnEffect(r, c, owner) {
-  const [x, y, w, h] = cellRect(r, c);
-  effects.push({
-    x: x + w / 2,
-    y: y + h / 2,
-    color: ownerDotColor(owner),
-    born: performance.now(),
-    life: 480,
-  });
-}
+// ─── Render Loop ──────────────────────────────────────────────────────────────
 
 function renderLoop(timestamp) {
-  drawScene();
+  renderTime = timestamp;
+
+  // Clear outside the shake transform so any revealed edge shows the bg color.
+  ctx.fillStyle = COLORS.bg;
+  ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+  ctx.save();
+  ctx.translate(...getShakeOffset());
+
+  for (let r = 0; r < GRID; r++)
+    for (let c = 0; c < GRID; c++)
+      drawCell(r, c);
+  drawGridLines();
+  drawFlashes(timestamp);
+  drawParticles(timestamp);
   drawEffects(timestamp);
+
+  ctx.restore();
+
   requestAnimationFrame(renderLoop);
 }
 
@@ -351,13 +497,19 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 // Animates a single move and all resulting chain reactions.
 // Returns the winner string if the game ended, otherwise null.
 async function runMove(r, c, player) {
+  const before = state.grid;
   state.grid = applyMove(state.grid, r, c, player);
+  applyOwnerTransitions(before, state.grid);
 
   const { steps, final } = resolveChains(state.grid);
   for (const step of steps) {
-    spawnEffect(step.r, step.c, step.owner);
+    spawnExplosion(step.r, step.c, step.owner);
+    spawnParticles(step.r, step.c, step.owner);
+    triggerShake();
     await sleep(200);
+    const prev = state.grid;
     state.grid = step.snap;
+    applyOwnerTransitions(prev, state.grid);
   }
   state.grid = final;
   state.moves++;
@@ -376,8 +528,8 @@ async function doPlayerMove(r, c) {
   if (busy || state.phase !== 'input' || state.turn !== 'player') return;
   if (!canPlay(state.grid, r, c, 'player')) return;
 
-  busy         = true;
-  state.phase  = 'animating';
+  busy        = true;
+  state.phase = 'animating';
   updateUI();
 
   const playerWinner = await runMove(r, c, 'player');
@@ -414,9 +566,13 @@ function updateUI() {
 }
 
 function restart() {
-  state   = newState();
-  effects = [];
-  busy    = false;
+  state     = newState();
+  effects   = [];
+  particles = [];
+  flashes   = [];
+  cellTr    = makeTrGrid();
+  shake     = null;
+  busy      = false;
   updateUI();
 }
 
