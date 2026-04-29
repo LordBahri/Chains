@@ -92,6 +92,15 @@ canvas { display: block; cursor: pointer; }
 }
 #upgrade-row strong { color: #c0caff; }
 #upgrade-row button { padding: 4px 12px; font-size: 0.78rem; }
+
+#goal-display {
+  font-size: 0.82rem;
+  color: #80cbc4;
+  padding: 6px 14px;
+  border: 1px solid #1e3a38;
+  border-radius: 8px;
+}
+#goal-display.done { color: #a5d6a7; border-color: #2e5a30; }
 </style>
 </head>
 <body>
@@ -115,6 +124,8 @@ canvas { display: block; cursor: pointer; }
   <div class="leg"><div class="leg-dot" style="background:#ef5350"></div><span>AI (red)</span></div>
   <div class="leg"><span>4 energy → explosion</span></div>
 </div>
+
+<div id="goal-display">Goal: —</div>
 
 <div id="upgrade-row">
   <strong>Overcharge</strong>
@@ -246,6 +257,19 @@ function getCellBgColor(r, c) {
   return rgbStr(lerpRGB(tr.from, tr.to, t));
 }
 
+// ─── Goal System ─────────────────────────────────────────────────────────────
+
+function genGoal() {
+  const defs = [
+    { type: 'score',  targets: [300, 500, 800], fmt: t => `Score ${t}+`             },
+    { type: 'chains', targets: [5, 10, 15],     fmt: t => `${t} chain explosions`   },
+    { type: 'moves',  targets: [10, 12, 15],    fmt: t => `Win within ${t} moves`   },
+  ];
+  const def    = defs[Math.floor(Math.random() * defs.length)];
+  const target = def.targets[Math.floor(Math.random() * def.targets.length)];
+  return { type: def.type, target, label: def.fmt(target), done: false };
+}
+
 // ─── State ────────────────────────────────────────────────────────────────────
 
 let coins        = parseInt(localStorage.getItem('cra_coins')  || '0');
@@ -262,9 +286,12 @@ function newState() {
     turn:       'player',
     phase:      'input',  // 'input' | 'animating' | 'over'
     winner:     null,
-    moves:      0,
-    score:      0,
-    multiplier: 1,
+    moves:       0,
+    playerMoves: 0,
+    chains:      0,
+    score:       0,
+    multiplier:  1,
+    goal:        genGoal(),
   };
 }
 
@@ -548,6 +575,7 @@ async function runMove(r, c, player) {
     if (step.owner === 'player') {
       state.score += 10 * state.multiplier;
       state.multiplier++;
+      state.chains++;
       updateScoreDisplay();
     }
     spawnExplosion(step.r, step.c, step.owner);
@@ -571,6 +599,12 @@ async function runMove(r, c, player) {
 function endGame(winner) {
   state.winner = winner;
   state.phase  = 'over';
+  // Moves goal can only be met by winning within the limit.
+  if (!state.goal.done && state.goal.type === 'moves'
+      && winner === 'player' && state.playerMoves <= state.goal.target) {
+    state.goal.done = true;
+    coins += 50;
+  }
   coins += Math.floor(state.score / 50);
   localStorage.setItem('cra_coins', coins);
   updateScoreDisplay();
@@ -584,6 +618,7 @@ async function doPlayerMove(r, c) {
 
   busy        = true;
   state.phase = 'animating';
+  state.playerMoves++;
   updateUI();
 
   const playerWinner = await runMove(r, c, 'player');
@@ -605,10 +640,35 @@ async function doPlayerMove(r, c) {
   busy = false;
 }
 
+function checkGoalCompletion() {
+  const g = state.goal;
+  if (g.done) return;
+  if (g.type === 'score'  && state.score  >= g.target) g.done = true;
+  if (g.type === 'chains' && state.chains >= g.target) g.done = true;
+  if (g.done) {
+    coins += 50;
+    localStorage.setItem('cra_coins', coins);
+  }
+}
+
+function updateGoalDisplay() {
+  const g = state.goal;
+  let progress;
+  if (g.type === 'score')  progress = `${state.score} / ${g.target}`;
+  if (g.type === 'chains') progress = `${state.chains} / ${g.target}`;
+  if (g.type === 'moves')  progress = `${state.playerMoves} / ${g.target} moves`;
+  const suffix = g.done ? '  [complete! +50 coins]' : '';
+  const el = document.getElementById('goal-display');
+  el.textContent = `Goal: ${g.label}  —  ${progress}${suffix}`;
+  el.className   = g.done ? 'done' : '';
+}
+
 function updateScoreDisplay() {
   document.getElementById('score-val').textContent  = state.score;
   document.getElementById('mult-val').textContent   = state.multiplier;
   document.getElementById('coins-val').textContent  = coins;
+  checkGoalCompletion();
+  updateGoalDisplay();
   refreshUpgradeBtn();
 }
 
@@ -656,6 +716,7 @@ function restart() {
   busy      = false;
   updateUI();
   updateScoreDisplay();
+  updateGoalDisplay();
 }
 
 // ─── Input ────────────────────────────────────────────────────────────────────
