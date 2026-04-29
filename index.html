@@ -53,8 +53,9 @@ h1 {
   font-size: 0.85rem;
   font-weight: 600;
 }
-#score-val { color: #e0e0ff; }
-#mult-val  { color: #ffd54f; min-width: 28px; }
+#score-val  { color: #e0e0ff; }
+#mult-val   { color: #ffd54f; min-width: 28px; }
+#coins-val  { color: #ffc107; }
 
 button {
   background: transparent;
@@ -89,6 +90,7 @@ canvas { display: block; cursor: pointer; }
   <div id="score-display">
     <span>Score: <span id="score-val">0</span></span>
     <span>×<span id="mult-val">1</span></span>
+    <span>Coins: <span id="coins-val">0</span></span>
   </div>
   <button id="btn-restart">Restart</button>
 </div>
@@ -226,6 +228,7 @@ function getCellBgColor(r, c) {
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
+let coins     = parseInt(localStorage.getItem('cra_coins') || '0');
 let state     = null;
 let hoverCell = null;
 let busy      = false;
@@ -544,6 +547,9 @@ async function runMove(r, c, player) {
 function endGame(winner) {
   state.winner = winner;
   state.phase  = 'over';
+  coins += Math.floor(state.score / 50);
+  localStorage.setItem('cra_coins', coins);
+  updateScoreDisplay();
   updateUI();
   busy = false;
 }
@@ -576,8 +582,9 @@ async function doPlayerMove(r, c) {
 }
 
 function updateScoreDisplay() {
-  document.getElementById('score-val').textContent = state.score;
-  document.getElementById('mult-val').textContent  = state.multiplier;
+  document.getElementById('score-val').textContent  = state.score;
+  document.getElementById('mult-val').textContent   = state.multiplier;
+  document.getElementById('coins-val').textContent  = coins;
 }
 
 function updateUI() {
