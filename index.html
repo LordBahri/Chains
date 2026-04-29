@@ -90,53 +90,56 @@ canvas { display: block; cursor: pointer; }
 
 <script>
 // ─── Constants ────────────────────────────────────────────────────────────────
-const GRID     = 6;
-const CELL     = 80;
-const PAD      = 20;
-const OVERFLOW = 4;
-const SZ       = GRID * CELL + PAD * 2;
 
-const C = {
+const GRID        = 6;
+const CELL        = 80;
+const PAD         = 20;
+const OVERFLOW    = 4;
+const CANVAS_SIZE = GRID * CELL + PAD * 2;
+
+const COLORS = {
   bg:        '#0f0f23',
   empty:     '#111128',
   playerBg:  '#0c2740',
   aiBg:      '#380c0c',
   gridLine:  '#252545',
-  pDot:      '#4fc3f7',
-  aDot:      '#ef5350',
+  playerDot: '#4fc3f7',
+  aiDot:     '#ef5350',
   hover:     'rgba(255,255,255,0.06)',
 };
 
 // ─── State ────────────────────────────────────────────────────────────────────
-let S        = null;   // game state
-let hover    = null;   // [r,c] | null
-let effects  = [];     // explosion ring effects
-let busy     = false;  // prevents re-entrant input
+
+let state   = null;   // game state object
+let hoverCell = null; // [r, c] | null — grid cell under the mouse
+let effects = [];     // active explosion ring effects
+let busy    = false;  // true while a move + AI response is in progress
 
 function newState() {
   return {
     grid:   Array.from({ length: GRID }, () =>
               Array.from({ length: GRID }, () => ({ owner: null, energy: 0 }))),
     turn:   'player',
-    phase:  'input',   // 'input' | 'animating' | 'over'
+    phase:  'input',  // 'input' | 'animating' | 'over'
     winner: null,
     moves:  0,
   };
 }
 
-// ─── Pure Game Logic ──────────────────────────────────────────────────────────
-function cloneGrid(g) {
-  return g.map(row => row.map(c => ({ ...c })));
+// ─── Game Logic ───────────────────────────────────────────────────────────────
+
+function cloneGrid(grid) {
+  return grid.map(row => row.map(cell => ({ ...cell })));
 }
 
 function neighbors(r, c) {
   return [[r-1,c],[r+1,c],[r,c-1],[r,c+1]]
-    .filter(([nr,nc]) => nr >= 0 && nr < GRID && nc >= 0 && nc < GRID);
+    .filter(([nr, nc]) => nr >= 0 && nr < GRID && nc >= 0 && nc < GRID);
 }
 
 function canPlay(grid, r, c, player) {
-  const cell = grid[r][c];
-  return cell.owner === null || cell.owner === player;
+  const { owner } = grid[r][c];
+  return owner === null || owner === player;
 }
 
 function applyMove(grid, r, c, player) {
@@ -146,31 +149,29 @@ function applyMove(grid, r, c, player) {
   return g;
 }
 
-// Resolves all chain explosions; returns steps (for animation) and final grid.
+// Resolves all chain explosions one at a time (restarting the scan after each).
+// Returns the animation steps and the settled final grid.
 function resolveChains(grid) {
   const steps = [];
   const g = cloneGrid(grid);
 
-  let changed = true;
-  while (changed) {
-    changed = false;
+  let exploded = true;
+  while (exploded) {
+    exploded = false;
     outer:
     for (let r = 0; r < GRID; r++) {
       for (let c = 0; c < GRID; c++) {
         if (g[r][c].energy >= OVERFLOW) {
-          changed = true;
           const owner = g[r][c].owner;
-
           g[r][c].energy -= OVERFLOW;
           if (g[r][c].energy === 0) g[r][c].owner = null;
-
           for (const [nr, nc] of neighbors(r, c)) {
             g[nr][nc].energy += 1;
             g[nr][nc].owner = owner;
           }
-
           steps.push({ r, c, owner, snap: cloneGrid(g) });
-          break outer; // restart search after each explosion
+          exploded = true;
+          break outer;
         }
       }
     }
@@ -179,7 +180,7 @@ function resolveChains(grid) {
   return { steps, final: g };
 }
 
-// Win = only one owner left on board (requires both players to have moved).
+// Win requires both players to have moved, then only one owner left on the board.
 function checkWin(grid, moves) {
   if (moves < 2) return null;
   const owners = new Set();
@@ -190,6 +191,7 @@ function checkWin(grid, moves) {
 }
 
 // ─── AI ───────────────────────────────────────────────────────────────────────
+
 function validMoves(grid, player) {
   const moves = [];
   for (let r = 0; r < GRID; r++)
@@ -198,94 +200,93 @@ function validMoves(grid, player) {
   return moves;
 }
 
-function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+function pickRandom(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
 
 function computeAIMove(grid) {
   const moves = validMoves(grid, 'ai');
   if (!moves.length) return null;
 
-  // 1. Moves that cause an explosion
-  const boom = moves.filter(([r, c]) => grid[r][c].energy + 1 >= OVERFLOW);
-  if (boom.length) return pick(boom);
+  // 1. Prefer moves that immediately trigger an explosion
+  const explosionMoves = moves.filter(([r, c]) => grid[r][c].energy + 1 >= OVERFLOW);
+  if (explosionMoves.length) return pickRandom(explosionMoves);
 
-  // 2. Cell with highest current energy (closer to exploding)
-  let best = [], bestE = -1;
+  // 2. Otherwise prefer the cell closest to exploding
+  let bestMoves = [], bestEnergy = -1;
   for (const [r, c] of moves) {
     const e = grid[r][c].energy;
-    if (e > bestE)       { bestE = e; best = [[r, c]]; }
-    else if (e === bestE) { best.push([r, c]); }
+    if (e > bestEnergy)       { bestEnergy = e; bestMoves = [[r, c]]; }
+    else if (e === bestEnergy) { bestMoves.push([r, c]); }
   }
-  if (best.length) return pick(best);
+  if (bestMoves.length) return pickRandom(bestMoves);
 
   // 3. Random fallback
-  return pick(moves);
+  return pickRandom(moves);
 }
 
-// ─── Canvas Setup ─────────────────────────────────────────────────────────────
+// ─── Rendering ────────────────────────────────────────────────────────────────
+
 const canvas = document.getElementById('canvas');
 const ctx    = canvas.getContext('2d');
-canvas.width  = SZ;
-canvas.height = SZ;
+canvas.width  = CANVAS_SIZE;
+canvas.height = CANVAS_SIZE;
 
-// ─── Rendering ────────────────────────────────────────────────────────────────
 function cellRect(r, c) {
   return [PAD + c * CELL, PAD + r * CELL, CELL, CELL];
 }
 
-// Returns dot center positions for 1–4 dots within a cell center.
+function ownerDotColor(owner) {
+  return owner === 'player' ? COLORS.playerDot : COLORS.aiDot;
+}
+
+// Returns canvas positions for 1–4 dots laid out within a cell center.
 function dotPositions(count, cx, cy) {
   const s = 20;
   switch (count) {
-    case 1: return [[cx, cy]];
-    case 2: return [[cx - s/2, cy], [cx + s/2, cy]];
-    case 3: return [[cx, cy - s/2], [cx - s/2, cy + s/2], [cx + s/2, cy + s/2]];
-    default:return [[cx-s/2,cy-s/2],[cx+s/2,cy-s/2],[cx-s/2,cy+s/2],[cx+s/2,cy+s/2]];
+    case 1:  return [[cx, cy]];
+    case 2:  return [[cx - s/2, cy], [cx + s/2, cy]];
+    case 3:  return [[cx, cy - s/2], [cx - s/2, cy + s/2], [cx + s/2, cy + s/2]];
+    default: return [[cx-s/2, cy-s/2], [cx+s/2, cy-s/2], [cx-s/2, cy+s/2], [cx+s/2, cy+s/2]];
   }
 }
 
-function drawGrid() {
-  ctx.fillStyle = C.bg;
-  ctx.fillRect(0, 0, SZ, SZ);
+function drawDots(x, y, w, h, cell) {
+  const color = ownerDotColor(cell.owner);
+  ctx.fillStyle   = color;
+  ctx.shadowColor = color;
+  ctx.shadowBlur  = 8;
+  for (const [dx, dy] of dotPositions(Math.min(cell.energy, 4), x + w/2, y + h/2)) {
+    ctx.beginPath();
+    ctx.arc(dx, dy, 7, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+}
 
-  for (let r = 0; r < GRID; r++) {
-    for (let c = 0; c < GRID; c++) {
-      const [x, y, w, h] = cellRect(r, c);
-      const cell   = S.grid[r][c];
-      const isHov  = hover && hover[0] === r && hover[1] === c;
-      const validH = isHov && S.phase === 'input' && S.turn === 'player'
-                     && canPlay(S.grid, r, c, 'player');
+function drawCell(r, c) {
+  const [x, y, w, h] = cellRect(r, c);
+  const cell = state.grid[r][c];
 
-      // Background
-      ctx.fillStyle = cell.owner === 'player' ? C.playerBg
-                    : cell.owner === 'ai'     ? C.aiBg
-                    : C.empty;
-      ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
+  const isHoverable = hoverCell && hoverCell[0] === r && hoverCell[1] === c
+                      && state.phase === 'input' && state.turn === 'player'
+                      && canPlay(state.grid, r, c, 'player');
 
-      if (validH) {
-        ctx.fillStyle = C.hover;
-        ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
-      }
+  ctx.fillStyle = cell.owner === 'player' ? COLORS.playerBg
+                : cell.owner === 'ai'     ? COLORS.aiBg
+                : COLORS.empty;
+  ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
 
-      // Energy dots
-      if (cell.energy > 0) {
-        const color = cell.owner === 'player' ? C.pDot : C.aDot;
-        const cx = x + w / 2, cy = y + h / 2;
-        ctx.fillStyle = color;
-        // Glow
-        ctx.shadowColor = color;
-        ctx.shadowBlur  = 8;
-        for (const [dx, dy] of dotPositions(Math.min(cell.energy, 4), cx, cy)) {
-          ctx.beginPath();
-          ctx.arc(dx, dy, 7, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        ctx.shadowBlur = 0;
-      }
-    }
+  if (isHoverable) {
+    ctx.fillStyle = COLORS.hover;
+    ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
   }
 
-  // Grid lines
-  ctx.strokeStyle = C.gridLine;
+  if (cell.energy > 0) drawDots(x, y, w, h, cell);
+}
+
+function drawGridLines() {
+  ctx.strokeStyle = COLORS.gridLine;
   ctx.lineWidth   = 1.5;
   for (let i = 0; i <= GRID; i++) {
     ctx.beginPath();
@@ -299,19 +300,26 @@ function drawGrid() {
   }
 }
 
-function drawEffects(ts) {
-  effects = effects.filter(e => {
-    const t = (ts - e.born) / e.life;
+function drawScene() {
+  ctx.fillStyle = COLORS.bg;
+  ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+  for (let r = 0; r < GRID; r++)
+    for (let c = 0; c < GRID; c++)
+      drawCell(r, c);
+  drawGridLines();
+}
+
+function drawEffects(timestamp) {
+  effects = effects.filter(effect => {
+    const t = (timestamp - effect.born) / effect.life;
     if (t >= 1) return false;
-    const alpha  = (1 - t) * 0.85;
-    const radius = 6 + t * 44;
-    ctx.globalAlpha  = alpha;
-    ctx.strokeStyle  = e.color;
-    ctx.shadowColor  = e.color;
-    ctx.shadowBlur   = 12;
-    ctx.lineWidth    = 2.5;
+    ctx.globalAlpha = (1 - t) * 0.85;
+    ctx.strokeStyle = effect.color;
+    ctx.shadowColor = effect.color;
+    ctx.shadowBlur  = 12;
+    ctx.lineWidth   = 2.5;
     ctx.beginPath();
-    ctx.arc(e.x, e.y, radius, 0, Math.PI * 2);
+    ctx.arc(effect.x, effect.y, 6 + t * 44, 0, Math.PI * 2);
     ctx.stroke();
     ctx.globalAlpha = 1;
     ctx.shadowBlur  = 0;
@@ -324,85 +332,79 @@ function spawnEffect(r, c, owner) {
   effects.push({
     x: x + w / 2,
     y: y + h / 2,
-    color: owner === 'player' ? C.pDot : C.aDot,
+    color: ownerDotColor(owner),
     born: performance.now(),
     life: 480,
   });
 }
 
-// ─── Render Loop ──────────────────────────────────────────────────────────────
-function renderLoop(ts) {
-  drawGrid();
-  drawEffects(ts);
+function renderLoop(timestamp) {
+  drawScene();
+  drawEffects(timestamp);
   requestAnimationFrame(renderLoop);
 }
 
 // ─── Game Flow ────────────────────────────────────────────────────────────────
-const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+// Animates a single move and all resulting chain reactions.
+// Returns the winner string if the game ended, otherwise null.
 async function runMove(r, c, player) {
-  const g = applyMove(S.grid, r, c, player);
-  S.grid = g; // show the placed piece immediately
+  state.grid = applyMove(state.grid, r, c, player);
 
-  const { steps, final } = resolveChains(g);
-
+  const { steps, final } = resolveChains(state.grid);
   for (const step of steps) {
     spawnEffect(step.r, step.c, step.owner);
     await sleep(200);
-    S.grid = step.snap;
+    state.grid = step.snap;
   }
+  state.grid = final;
+  state.moves++;
 
-  S.grid = final;
-  S.moves++;
+  return checkWin(state.grid, state.moves);
+}
 
-  const winner = checkWin(S.grid, S.moves);
-  if (winner) {
-    S.winner = winner;
-    S.phase  = 'over';
-    updateUI();
-    busy = false;
-  }
+function endGame(winner) {
+  state.winner = winner;
+  state.phase  = 'over';
+  updateUI();
+  busy = false;
 }
 
 async function doPlayerMove(r, c) {
-  if (busy || S.phase !== 'input' || S.turn !== 'player') return;
-  if (!canPlay(S.grid, r, c, 'player')) return;
+  if (busy || state.phase !== 'input' || state.turn !== 'player') return;
+  if (!canPlay(state.grid, r, c, 'player')) return;
 
-  busy    = true;
-  S.phase = 'animating';
+  busy         = true;
+  state.phase  = 'animating';
   updateUI();
 
-  await runMove(r, c, 'player');
-  if (S.phase === 'over') return;
+  const playerWinner = await runMove(r, c, 'player');
+  if (playerWinner) { endGame(playerWinner); return; }
 
-  S.turn = 'ai';
+  state.turn = 'ai';
   updateUI();
   await sleep(480);
 
-  const move = computeAIMove(S.grid);
-  if (!move) {
-    S.winner = 'player';
-    S.phase  = 'over';
-    updateUI();
-    busy = false;
-    return;
-  }
+  const aiMove = computeAIMove(state.grid);
+  if (!aiMove) { endGame('player'); return; }
 
-  await runMove(move[0], move[1], 'ai');
-  if (S.phase === 'over') return;
+  const aiWinner = await runMove(aiMove[0], aiMove[1], 'ai');
+  if (aiWinner) { endGame(aiWinner); return; }
 
-  S.turn  = 'player';
-  S.phase = 'input';
+  state.turn  = 'player';
+  state.phase = 'input';
   updateUI();
   busy = false;
 }
 
 function updateUI() {
   const el = document.getElementById('turn-indicator');
-  if (S.phase === 'over') {
-    el.textContent = S.winner === 'player' ? 'You Win!' : 'AI Wins!';
-    el.className   = S.winner === 'player' ? 'win' : 'lose';
-  } else if (S.turn === 'player') {
+  if (state.phase === 'over') {
+    el.textContent = state.winner === 'player' ? 'You Win!' : 'AI Wins!';
+    el.className   = state.winner === 'player' ? 'win' : 'lose';
+  } else if (state.turn === 'player') {
     el.textContent = 'Your Turn';
     el.className   = 'player';
   } else {
@@ -411,36 +413,43 @@ function updateUI() {
   }
 }
 
-// ─── Input ────────────────────────────────────────────────────────────────────
-function canvasCoords(e) {
-  const rect  = canvas.getBoundingClientRect();
-  const sx    = canvas.width  / rect.width;
-  const sy    = canvas.height / rect.height;
-  const px    = (e.clientX - rect.left) * sx;
-  const py    = (e.clientY - rect.top)  * sy;
-  const c     = Math.floor((px - PAD) / CELL);
-  const r     = Math.floor((py - PAD) / CELL);
-  return (r >= 0 && r < GRID && c >= 0 && c < GRID) ? [r, c] : null;
-}
-
-canvas.addEventListener('click', e => {
-  const pos = canvasCoords(e);
-  if (pos) doPlayerMove(pos[0], pos[1]);
-});
-
-canvas.addEventListener('mousemove', e => { hover = canvasCoords(e); });
-canvas.addEventListener('mouseleave', () => { hover = null; });
-
-document.getElementById('btn-restart').addEventListener('click', () => {
-  S       = newState();
+function restart() {
+  state   = newState();
   effects = [];
   busy    = false;
   updateUI();
-});
+}
+
+// ─── Input ────────────────────────────────────────────────────────────────────
+
+function canvasToGrid(event) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width  / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const px = (event.clientX - rect.left) * scaleX;
+  const py = (event.clientY - rect.top)  * scaleY;
+  const c  = Math.floor((px - PAD) / CELL);
+  const r  = Math.floor((py - PAD) / CELL);
+  return (r >= 0 && r < GRID && c >= 0 && c < GRID) ? [r, c] : null;
+}
+
+function bindInput() {
+  canvas.addEventListener('click', e => {
+    const pos = canvasToGrid(e);
+    if (pos) doPlayerMove(pos[0], pos[1]);
+  });
+
+  canvas.addEventListener('mousemove', e => { hoverCell = canvasToGrid(e); });
+  canvas.addEventListener('mouseleave', () => { hoverCell = null; });
+
+  document.getElementById('btn-restart').addEventListener('click', restart);
+}
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
-S = newState();
+
+state = newState();
 updateUI();
+bindInput();
 requestAnimationFrame(renderLoop);
 </script>
 </body>
