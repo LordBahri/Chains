@@ -47,6 +47,15 @@ h1 {
 #turn-indicator.win    { background: rgba(102,187,106,0.2); border: 1px solid #66bb6a; color: #66bb6a; }
 #turn-indicator.lose   { background: rgba(239,83,80,0.2);   border: 1px solid #ef5350; color: #ef5350; }
 
+#score-display {
+  display: flex;
+  gap: 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+#score-val { color: #e0e0ff; }
+#mult-val  { color: #ffd54f; min-width: 28px; }
+
 button {
   background: transparent;
   border: 1px solid #3a3a5a;
@@ -77,6 +86,10 @@ canvas { display: block; cursor: pointer; }
 
 <div id="ui">
   <div id="turn-indicator" class="player">Your Turn</div>
+  <div id="score-display">
+    <span>Score: <span id="score-val">0</span></span>
+    <span>×<span id="mult-val">1</span></span>
+  </div>
   <button id="btn-restart">Restart</button>
 </div>
 
@@ -219,12 +232,14 @@ let busy      = false;
 
 function newState() {
   return {
-    grid:   Array.from({ length: GRID }, () =>
-              Array.from({ length: GRID }, () => ({ owner: null, energy: 0 }))),
-    turn:   'player',
-    phase:  'input',  // 'input' | 'animating' | 'over'
-    winner: null,
-    moves:  0,
+    grid:       Array.from({ length: GRID }, () =>
+                  Array.from({ length: GRID }, () => ({ owner: null, energy: 0 }))),
+    turn:       'player',
+    phase:      'input',  // 'input' | 'animating' | 'over'
+    winner:     null,
+    moves:      0,
+    score:      0,
+    multiplier: 1,
   };
 }
 
@@ -503,6 +518,11 @@ async function runMove(r, c, player) {
 
   const { steps, final } = resolveChains(state.grid);
   for (const step of steps) {
+    if (step.owner === 'player') {
+      state.score += 10 * state.multiplier;
+      state.multiplier++;
+      updateScoreDisplay();
+    }
     spawnExplosion(step.r, step.c, step.owner);
     spawnParticles(step.r, step.c, step.owner);
     triggerShake();
@@ -510,6 +530,10 @@ async function runMove(r, c, player) {
     const prev = state.grid;
     state.grid = step.snap;
     applyOwnerTransitions(prev, state.grid);
+  }
+  if (player === 'player') {
+    state.multiplier = 1;
+    updateScoreDisplay();
   }
   state.grid = final;
   state.moves++;
@@ -551,6 +575,11 @@ async function doPlayerMove(r, c) {
   busy = false;
 }
 
+function updateScoreDisplay() {
+  document.getElementById('score-val').textContent = state.score;
+  document.getElementById('mult-val').textContent  = state.multiplier;
+}
+
 function updateUI() {
   const el = document.getElementById('turn-indicator');
   if (state.phase === 'over') {
@@ -574,6 +603,7 @@ function restart() {
   shake     = null;
   busy      = false;
   updateUI();
+  updateScoreDisplay();
 }
 
 // ─── Input ────────────────────────────────────────────────────────────────────
@@ -605,6 +635,7 @@ function bindInput() {
 
 state = newState();
 updateUI();
+updateScoreDisplay();
 bindInput();
 requestAnimationFrame(renderLoop);
 </script>
