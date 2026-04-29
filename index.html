@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chain Reaction Arena</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #0a0a1a;
+  color: #e0e0ff;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+
+h1 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: #a0aaff;
+}
+
+#ui {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+#turn-indicator {
+  font-size: 0.95rem;
+  font-weight: 600;
+  padding: 6px 18px;
+  border-radius: 20px;
+  min-width: 148px;
+  text-align: center;
+  transition: background 0.25s, border-color 0.25s, color 0.25s;
+}
+
+#turn-indicator.player { background: rgba(79,195,247,0.15); border: 1px solid #4fc3f7; color: #4fc3f7; }
+#turn-indicator.ai     { background: rgba(239,83,80,0.15);  border: 1px solid #ef5350; color: #ef5350; }
+#turn-indicator.win    { background: rgba(102,187,106,0.2); border: 1px solid #66bb6a; color: #66bb6a; }
+#turn-indicator.lose   { background: rgba(239,83,80,0.2);   border: 1px solid #ef5350; color: #ef5350; }
+
+button {
+  background: transparent;
+  border: 1px solid #3a3a5a;
+  color: #a0aaff;
+  padding: 6px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.88rem;
+  transition: background 0.2s, border-color 0.2s;
+}
+button:hover { background: rgba(160,170,255,0.1); border-color: #a0aaff; }
+
+canvas { display: block; cursor: pointer; }
+
+#legend {
+  display: flex;
+  gap: 18px;
+  font-size: 0.78rem;
+  color: #555580;
+}
+.leg { display: flex; align-items: center; gap: 6px; }
+.leg-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+</style>
+</head>
+<body>
+
+<h1>Chain Reaction Arena</h1>
+
+<div id="ui">
+  <div id="turn-indicator" class="player">Your Turn</div>
+  <button id="btn-restart">Restart</button>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<div id="legend">
+  <div class="leg"><div class="leg-dot" style="background:#4fc3f7"></div><span>You (blue)</span></div>
+  <div class="leg"><div class="leg-dot" style="background:#ef5350"></div><span>AI (red)</span></div>
+  <div class="leg"><span>4 energy → explosion</span></div>
+</div>
+
+<script>
+// ─── Constants ────────────────────────────────────────────────────────────────
+const GRID     = 6;
+const CELL     = 80;
+const PAD      = 20;
+const OVERFLOW = 4;
+const SZ       = GRID * CELL + PAD * 2;
+
+const C = {
+  bg:        '#0f0f23',
+  empty:     '#111128',
+  playerBg:  '#0c2740',
+  aiBg:      '#380c0c',
+  gridLine:  '#252545',
+  pDot:      '#4fc3f7',
+  aDot:      '#ef5350',
+  hover:     'rgba(255,255,255,0.06)',
+};
+
+// ─── State ────────────────────────────────────────────────────────────────────
+let S        = null;   // game state
+let hover    = null;   // [r,c] | null
+let effects  = [];     // explosion ring effects
+let busy     = false;  // prevents re-entrant input
+
+function newState() {
+  return {
+    grid:   Array.from({ length: GRID }, () =>
+              Array.from({ length: GRID }, () => ({ owner: null, energy: 0 }))),
+    turn:   'player',
+    phase:  'input',   // 'input' | 'animating' | 'over'
+    winner: null,
+    moves:  0,
+  };
+}
+
+// ─── Pure Game Logic ──────────────────────────────────────────────────────────
+function cloneGrid(g) {
+  return g.map(row => row.map(c => ({ ...c })));
+}
+
+function neighbors(r, c) {
+  return [[r-1,c],[r+1,c],[r,c-1],[r,c+1]]
+    .filter(([nr,nc]) => nr >= 0 && nr < GRID && nc >= 0 && nc < GRID);
+}
+
+function canPlay(grid, r, c, player) {
+  const cell = grid[r][c];
+  return cell.owner === null || cell.owner === player;
+}
+
+function applyMove(grid, r, c, player) {
+  const g = cloneGrid(grid);
+  g[r][c].owner = player;
+  g[r][c].energy += 1;
+  return g;
+}
+
+// Resolves all chain explosions; returns steps (for animation) and final grid.
+function resolveChains(grid) {
+  const steps = [];
+  const g = cloneGrid(grid);
+
+  let changed = true;
+  while (changed) {
+    changed = false;
+    outer:
+    for (let r = 0; r < GRID; r++) {
+      for (let c = 0; c < GRID; c++) {
+        if (g[r][c].energy >= OVERFLOW) {
+          changed = true;
+          const owner = g[r][c].owner;
+
+          g[r][c].energy -= OVERFLOW;
+          if (g[r][c].energy === 0) g[r][c].owner = null;
+
+          for (const [nr, nc] of neighbors(r, c)) {
+            g[nr][nc].energy += 1;
+            g[nr][nc].owner = owner;
+          }
+
+          steps.push({ r, c, owner, snap: cloneGrid(g) });
+          break outer; // restart search after each explosion
+        }
+      }
+    }
+  }
+
+  return { steps, final: g };
+}
+
+// Win = only one owner left on board (requires both players to have moved).
+function checkWin(grid, moves) {
+  if (moves < 2) return null;
+  const owners = new Set();
+  for (const row of grid)
+    for (const cell of row)
+      if (cell.owner) owners.add(cell.owner);
+  return owners.size === 1 ? [...owners][0] : null;
+}
+
+// ─── AI ───────────────────────────────────────────────────────────────────────
+function validMoves(grid, player) {
+  const moves = [];
+  for (let r = 0; r < GRID; r++)
+    for (let c = 0; c < GRID; c++)
+      if (canPlay(grid, r, c, player)) moves.push([r, c]);
+  return moves;
+}
+
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+
+function computeAIMove(grid) {
+  const moves = validMoves(grid, 'ai');
+  if (!moves.length) return null;
+
+  // 1. Moves that cause an explosion
+  const boom = moves.filter(([r, c]) => grid[r][c].energy + 1 >= OVERFLOW);
+  if (boom.length) return pick(boom);
+
+  // 2. Cell with highest current energy (closer to exploding)
+  let best = [], bestE = -1;
+  for (const [r, c] of moves) {
+    const e = grid[r][c].energy;
+    if (e > bestE)       { bestE = e; best = [[r, c]]; }
+    else if (e === bestE) { best.push([r, c]); }
+  }
+  if (best.length) return pick(best);
+
+  // 3. Random fallback
+  return pick(moves);
+}
+
+// ─── Canvas Setup ─────────────────────────────────────────────────────────────
+const canvas = document.getElementById('canvas');
+const ctx    = canvas.getContext('2d');
+canvas.width  = SZ;
+canvas.height = SZ;
+
+// ─── Rendering ────────────────────────────────────────────────────────────────
+function cellRect(r, c) {
+  return [PAD + c * CELL, PAD + r * CELL, CELL, CELL];
+}
+
+// Returns dot center positions for 1–4 dots within a cell center.
+function dotPositions(count, cx, cy) {
+  const s = 20;
+  switch (count) {
+    case 1: return [[cx, cy]];
+    case 2: return [[cx - s/2, cy], [cx + s/2, cy]];
+    case 3: return [[cx, cy - s/2], [cx - s/2, cy + s/2], [cx + s/2, cy + s/2]];
+    default:return [[cx-s/2,cy-s/2],[cx+s/2,cy-s/2],[cx-s/2,cy+s/2],[cx+s/2,cy+s/2]];
+  }
+}
+
+function drawGrid() {
+  ctx.fillStyle = C.bg;
+  ctx.fillRect(0, 0, SZ, SZ);
+
+  for (let r = 0; r < GRID; r++) {
+    for (let c = 0; c < GRID; c++) {
+      const [x, y, w, h] = cellRect(r, c);
+      const cell   = S.grid[r][c];
+      const isHov  = hover && hover[0] === r && hover[1] === c;
+      const validH = isHov && S.phase === 'input' && S.turn === 'player'
+                     && canPlay(S.grid, r, c, 'player');
+
+      // Background
+      ctx.fillStyle = cell.owner === 'player' ? C.playerBg
+                    : cell.owner === 'ai'     ? C.aiBg
+                    : C.empty;
+      ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
+
+      if (validH) {
+        ctx.fillStyle = C.hover;
+        ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
+      }
+
+      // Energy dots
+      if (cell.energy > 0) {
+        const color = cell.owner === 'player' ? C.pDot : C.aDot;
+        const cx = x + w / 2, cy = y + h / 2;
+        ctx.fillStyle = color;
+        // Glow
+        ctx.shadowColor = color;
+        ctx.shadowBlur  = 8;
+        for (const [dx, dy] of dotPositions(Math.min(cell.energy, 4), cx, cy)) {
+          ctx.beginPath();
+          ctx.arc(dx, dy, 7, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.shadowBlur = 0;
+      }
+    }
+  }
+
+  // Grid lines
+  ctx.strokeStyle = C.gridLine;
+  ctx.lineWidth   = 1.5;
+  for (let i = 0; i <= GRID; i++) {
+    ctx.beginPath();
+    ctx.moveTo(PAD + i * CELL, PAD);
+    ctx.lineTo(PAD + i * CELL, PAD + GRID * CELL);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(PAD, PAD + i * CELL);
+    ctx.lineTo(PAD + GRID * CELL, PAD + i * CELL);
+    ctx.stroke();
+  }
+}
+
+function drawEffects(ts) {
+  effects = effects.filter(e => {
+    const t = (ts - e.born) / e.life;
+    if (t >= 1) return false;
+    const alpha  = (1 - t) * 0.85;
+    const radius = 6 + t * 44;
+    ctx.globalAlpha  = alpha;
+    ctx.strokeStyle  = e.color;
+    ctx.shadowColor  = e.color;
+    ctx.shadowBlur   = 12;
+    ctx.lineWidth    = 2.5;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur  = 0;
+    return true;
+  });
+}
+
+function spawnEffect(r, c, owner) {
+  const [x, y, w, h] = cellRect(r, c);
+  effects.push({
+    x: x + w / 2,
+    y: y + h / 2,
+    color: owner === 'player' ? C.pDot : C.aDot,
+    born: performance.now(),
+    life: 480,
+  });
+}
+
+// ─── Render Loop ──────────────────────────────────────────────────────────────
+function renderLoop(ts) {
+  drawGrid();
+  drawEffects(ts);
+  requestAnimationFrame(renderLoop);
+}
+
+// ─── Game Flow ────────────────────────────────────────────────────────────────
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function runMove(r, c, player) {
+  const g = applyMove(S.grid, r, c, player);
+  S.grid = g; // show the placed piece immediately
+
+  const { steps, final } = resolveChains(g);
+
+  for (const step of steps) {
+    spawnEffect(step.r, step.c, step.owner);
+    await sleep(200);
+    S.grid = step.snap;
+  }
+
+  S.grid = final;
+  S.moves++;
+
+  const winner = checkWin(S.grid, S.moves);
+  if (winner) {
+    S.winner = winner;
+    S.phase  = 'over';
+    updateUI();
+    busy = false;
+  }
+}
+
+async function doPlayerMove(r, c) {
+  if (busy || S.phase !== 'input' || S.turn !== 'player') return;
+  if (!canPlay(S.grid, r, c, 'player')) return;
+
+  busy    = true;
+  S.phase = 'animating';
+  updateUI();
+
+  await runMove(r, c, 'player');
+  if (S.phase === 'over') return;
+
+  S.turn = 'ai';
+  updateUI();
+  await sleep(480);
+
+  const move = computeAIMove(S.grid);
+  if (!move) {
+    S.winner = 'player';
+    S.phase  = 'over';
+    updateUI();
+    busy = false;
+    return;
+  }
+
+  await runMove(move[0], move[1], 'ai');
+  if (S.phase === 'over') return;
+
+  S.turn  = 'player';
+  S.phase = 'input';
+  updateUI();
+  busy = false;
+}
+
+function updateUI() {
+  const el = document.getElementById('turn-indicator');
+  if (S.phase === 'over') {
+    el.textContent = S.winner === 'player' ? 'You Win!' : 'AI Wins!';
+    el.className   = S.winner === 'player' ? 'win' : 'lose';
+  } else if (S.turn === 'player') {
+    el.textContent = 'Your Turn';
+    el.className   = 'player';
+  } else {
+    el.textContent = 'AI Thinking…';
+    el.className   = 'ai';
+  }
+}
+
+// ─── Input ────────────────────────────────────────────────────────────────────
+function canvasCoords(e) {
+  const rect  = canvas.getBoundingClientRect();
+  const sx    = canvas.width  / rect.width;
+  const sy    = canvas.height / rect.height;
+  const px    = (e.clientX - rect.left) * sx;
+  const py    = (e.clientY - rect.top)  * sy;
+  const c     = Math.floor((px - PAD) / CELL);
+  const r     = Math.floor((py - PAD) / CELL);
+  return (r >= 0 && r < GRID && c >= 0 && c < GRID) ? [r, c] : null;
+}
+
+canvas.addEventListener('click', e => {
+  const pos = canvasCoords(e);
+  if (pos) doPlayerMove(pos[0], pos[1]);
+});
+
+canvas.addEventListener('mousemove', e => { hover = canvasCoords(e); });
+canvas.addEventListener('mouseleave', () => { hover = null; });
+
+document.getElementById('btn-restart').addEventListener('click', () => {
+  S       = newState();
+  effects = [];
+  busy    = false;
+  updateUI();
+});
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+S = newState();
+updateUI();
+requestAnimationFrame(renderLoop);
+</script>
+</body>
+</html>
