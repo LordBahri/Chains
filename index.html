@@ -79,6 +79,19 @@ canvas { display: block; cursor: pointer; }
 }
 .leg { display: flex; align-items: center; gap: 6px; }
 .leg-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+#upgrade-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 0.8rem;
+  padding: 7px 14px;
+  border: 1px solid #252545;
+  border-radius: 8px;
+  color: #888aaa;
+}
+#upgrade-row strong { color: #c0caff; }
+#upgrade-row button { padding: 4px 12px; font-size: 0.78rem; }
 </style>
 </head>
 <body>
@@ -101,6 +114,13 @@ canvas { display: block; cursor: pointer; }
   <div class="leg"><div class="leg-dot" style="background:#4fc3f7"></div><span>You (blue)</span></div>
   <div class="leg"><div class="leg-dot" style="background:#ef5350"></div><span>AI (red)</span></div>
   <div class="leg"><span>4 energy → explosion</span></div>
+</div>
+
+<div id="upgrade-row">
+  <strong>Overcharge</strong>
+  <span id="oc-desc">15% chance per level to spread +2 energy</span>
+  <span id="oc-level">Lv 0 / 3</span>
+  <button id="btn-buy-oc">Buy (5c)</button>
 </div>
 
 <script>
@@ -228,7 +248,9 @@ function getCellBgColor(r, c) {
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
-let coins     = parseInt(localStorage.getItem('cra_coins') || '0');
+let coins        = parseInt(localStorage.getItem('cra_coins')  || '0');
+let upgOvercharge = parseInt(localStorage.getItem('cra_oc')    || '0');
+const OC_MAX  = 3;
 let state     = null;
 let hoverCell = null;
 let busy      = false;
@@ -286,7 +308,9 @@ function resolveChains(grid) {
           g[r][c].energy -= OVERFLOW;
           if (g[r][c].energy === 0) g[r][c].owner = null;
           for (const [nr, nc] of neighbors(r, c)) {
-            g[nr][nc].energy += 1;
+            const bonus = (owner === 'player' && upgOvercharge > 0
+              && Math.random() < 0.15 * upgOvercharge) ? 2 : 1;
+            g[nr][nc].energy += bonus;
             g[nr][nc].owner = owner;
           }
           steps.push({ r, c, owner, snap: cloneGrid(g) });
@@ -585,6 +609,27 @@ function updateScoreDisplay() {
   document.getElementById('score-val').textContent  = state.score;
   document.getElementById('mult-val').textContent   = state.multiplier;
   document.getElementById('coins-val').textContent  = coins;
+  refreshUpgradeBtn();
+}
+
+function refreshUpgradeBtn() {
+  const maxed = upgOvercharge >= OC_MAX;
+  const cost  = (upgOvercharge + 1) * 5;
+  document.getElementById('oc-level').textContent = `Lv ${upgOvercharge} / ${OC_MAX}`;
+  const btn = document.getElementById('btn-buy-oc');
+  btn.textContent = maxed ? 'Maxed' : `Buy (${cost}c)`;
+  btn.disabled    = maxed || coins < cost;
+}
+
+function buyOvercharge() {
+  if (upgOvercharge >= OC_MAX) return;
+  const cost = (upgOvercharge + 1) * 5;
+  if (coins < cost) return;
+  coins -= cost;
+  upgOvercharge++;
+  localStorage.setItem('cra_coins', coins);
+  localStorage.setItem('cra_oc', upgOvercharge);
+  updateScoreDisplay();
 }
 
 function updateUI() {
@@ -636,6 +681,7 @@ function bindInput() {
   canvas.addEventListener('mouseleave', () => { hoverCell = null; });
 
   document.getElementById('btn-restart').addEventListener('click', restart);
+  document.getElementById('btn-buy-oc').addEventListener('click', buyOvercharge);
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
