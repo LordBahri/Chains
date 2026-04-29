@@ -170,9 +170,11 @@ function easeOut(t) { return 1 - (1-t) * (1-t); }
 
 // ─── Animation State ──────────────────────────────────────────────────────────
 
-let effects   = [];  // expanding ring objects
-let particles = [];  // energy orbs flying between cells
-let flashes   = [];  // brief cell-fill overlays on explosion
+let effects    = [];  // expanding ring objects
+let particles  = [];  // energy orbs flying between cells
+let flashes    = [];  // brief cell-fill overlays on explosion
+let pops       = [];  // quick ring on energy placement
+let floatTexts = [];  // score labels that float upward
 let cellTr    = makeTrGrid();  // per-cell color transition state
 let shake     = null;          // { amplitude, born, life }
 let renderTime = 0;            // timestamp from the current RAF frame
@@ -209,10 +211,25 @@ function spawnParticles(r, c, owner) {
   }
 }
 
-// Accumulate shake; a chain builds amplitude up to a cap.
-function triggerShake() {
-  const amp = shake ? Math.min(8, shake.amplitude + 3) : 4;
+// Accumulate shake; longer chains drive larger amplitude.
+function triggerShake(chainStep = 1) {
+  const base = Math.min(10, 2 + chainStep * 1.5 | 0);
+  const amp  = shake ? Math.min(14, shake.amplitude + base) : base;
   shake = { amplitude: amp, born: performance.now(), life: 380 };
+}
+
+// Quick ring that pops out when the player places a piece.
+function spawnPop(r, c, owner) {
+  const [x, y, w, h] = cellRect(r, c);
+  pops.push({ x: x + w/2, y: y + h/2, color: ownerDotColor(owner),
+              born: performance.now(), life: 160 });
+}
+
+// Floating score label rising from an explosion centre.
+function spawnFloatText(r, c, text, color) {
+  const [x, y, w, h] = cellRect(r, c);
+  floatTexts.push({ x: x + w/2, y: y + h/2 - 4, text, color,
+                    born: performance.now(), life: 680 });
 }
 
 // Begin a color transition for one cell, picking up from wherever it currently is
@@ -514,6 +531,46 @@ function drawParticles(timestamp) {
   });
 }
 
+// Small ring that pops on placement — faster and smaller than an explosion ring.
+function drawPops(timestamp) {
+  pops = pops.filter(p => {
+    const t = (timestamp - p.born) / p.life;
+    if (t >= 1) return false;
+    const ease = 1 - (1 - t) * (1 - t);
+    ctx.globalAlpha = (1 - t) * 0.75;
+    ctx.strokeStyle = p.color;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur  = 6;
+    ctx.lineWidth   = 2;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, ease * 22, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur  = 0;
+    return true;
+  });
+}
+
+// Score labels that drift upward and fade out.
+function drawFloatTexts(timestamp) {
+  floatTexts = floatTexts.filter(ft => {
+    const t = (timestamp - ft.born) / ft.life;
+    if (t >= 1) return false;
+    const alpha = t < 0.25 ? 1 : 1 - (t - 0.25) / 0.75;
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle   = ft.color;
+    ctx.shadowColor = ft.color;
+    ctx.shadowBlur  = 5;
+    ctx.font        = 'bold 12px Segoe UI, system-ui, sans-serif';
+    ctx.textAlign   = 'center';
+    ctx.fillText(ft.text, ft.x, ft.y - 36 * t);
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur  = 0;
+    ctx.textAlign   = 'left';
+    return true;
+  });
+}
+
 // Expanding rings; each effect has an optional `born` delay for staggering.
 function drawEffects(timestamp) {
   effects = effects.filter(effect => {
@@ -553,6 +610,8 @@ function renderLoop(timestamp) {
   drawFlashes(timestamp);
   drawParticles(timestamp);
   drawEffects(timestamp);
+  drawPops(timestamp);
+  drawFloatTexts(timestamp);
 
   ctx.restore();
 
@@ -569,19 +628,23 @@ async function runMove(r, c, player) {
   const before = state.grid;
   state.grid = applyMove(state.grid, r, c, player);
   applyOwnerTransitions(before, state.grid);
+  if (player === 'player') spawnPop(r, c, player);
 
   const { steps, final } = resolveChains(state.grid);
-  for (const step of steps) {
+  for (let i = 0; i < steps.length; i++) {
+    const step = steps[i];
     if (step.owner === 'player') {
-      state.score += 10 * state.multiplier;
+      const earned = 10 * state.multiplier;
+      state.score += earned;
       state.multiplier++;
       state.chains++;
+      spawnFloatText(step.r, step.c, `+${earned}`, COLORS.playerDot);
       updateScoreDisplay();
     }
     spawnExplosion(step.r, step.c, step.owner);
     spawnParticles(step.r, step.c, step.owner);
-    triggerShake();
-    await sleep(200);
+    triggerShake(i + 1);
+    await sleep(80);
     const prev = state.grid;
     state.grid = step.snap;
     applyOwnerTransitions(prev, state.grid);
@@ -708,9 +771,11 @@ function updateUI() {
 
 function restart() {
   state     = newState();
-  effects   = [];
-  particles = [];
-  flashes   = [];
+  effects    = [];
+  particles  = [];
+  flashes    = [];
+  pops       = [];
+  floatTexts = [];
   cellTr    = makeTrGrid();
   shake     = null;
   busy      = false;
