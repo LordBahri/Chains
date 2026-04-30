@@ -98,15 +98,36 @@ button {
   background: transparent;
   border: 1px solid #3a3a5a;
   color: #a0aaff;
-  padding: 6px 16px;
-  border-radius: 6px;
+  padding: 7px 20px;
+  border-radius: 20px;
   cursor: pointer;
   font-size: 0.88rem;
   transition: background 0.2s, border-color 0.2s;
 }
-button:hover { background: rgba(160,170,255,0.1); border-color: #a0aaff; }
+button:hover { background: rgba(160,170,255,0.12); border-color: #a0aaff; }
 
 canvas { display: block; cursor: pointer; }
+
+#canvas-wrap { position: relative; }
+
+#overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: rgba(7,7,20,0.82);
+}
+#overlay.hidden { display: none; }
+#overlay-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+#overlay-title.win  { color: #66bb6a; }
+#overlay-title.lose { color: #ef5350; }
 
 #legend {
   display: flex;
@@ -155,7 +176,13 @@ canvas { display: block; cursor: pointer; }
 
 <div id="goal-display">Goal: —</div>
 
-<canvas id="canvas"></canvas>
+<div id="canvas-wrap">
+  <canvas id="canvas"></canvas>
+  <div id="overlay" class="hidden">
+    <p id="overlay-title"></p>
+    <button id="btn-play-again">Play Again</button>
+  </div>
+</div>
 
 <div id="legend">
   <div class="leg"><div class="leg-dot" style="background:#4fc3f7"></div><span>You (blue)</span></div>
@@ -793,16 +820,20 @@ function buyOvercharge() {
 }
 
 function updateUI() {
-  const el = document.getElementById('turn-indicator');
+  const el      = document.getElementById('turn-indicator');
+  const overlay = document.getElementById('overlay');
+  const title   = document.getElementById('overlay-title');
   if (state.phase === 'over') {
-    el.textContent = state.winner === 'player' ? 'You Win!' : 'AI Wins!';
-    el.className   = state.winner === 'player' ? 'win' : 'lose';
-  } else if (state.turn === 'player') {
-    el.textContent = 'Your Turn';
-    el.className   = 'player';
+    const won      = state.winner === 'player';
+    el.textContent = won ? 'You Win!' : 'AI Wins!';
+    el.className   = won ? 'win' : 'lose';
+    title.textContent = won ? 'You Win!' : 'AI Wins!';
+    title.className   = won ? 'win' : 'lose';
+    overlay.classList.remove('hidden');
   } else {
-    el.textContent = 'AI Thinking…';
-    el.className   = 'ai';
+    overlay.classList.add('hidden');
+    el.textContent = state.turn === 'player' ? 'Your Turn' : 'AI Thinking…';
+    el.className   = state.turn === 'player' ? 'player' : 'ai';
   }
 }
 
@@ -845,6 +876,7 @@ function bindInput() {
 
   document.getElementById('btn-restart').addEventListener('click', restart);
   document.getElementById('btn-buy-oc').addEventListener('click', buyOvercharge);
+  document.getElementById('btn-play-again').addEventListener('click', restart);
 }
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
