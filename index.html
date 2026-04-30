@@ -508,6 +508,7 @@ const OC_MAX  = 3;
 let state     = null;
 let hoverCell = null;
 let busy      = false;
+let gameTick  = 0;   // incremented on restart; lets stale async calls self-cancel
 
 function newState() {
   return {
@@ -841,7 +842,7 @@ async function runMove(r, c, player) {
   const before = state.grid;
   state.grid = applyMove(state.grid, r, c, player);
   applyOwnerTransitions(before, state.grid);
-  if (player === 'player') spawnPop(r, c, player);
+  spawnPop(r, c, player);
 
   const { steps, final } = resolveChains(state.grid);
   for (let i = 0; i < steps.length; i++) {
@@ -897,24 +898,28 @@ async function doPlayerMove(r, c) {
   if (busy || state.phase !== 'input' || state.turn !== 'player') return;
   if (!canPlay(state.grid, r, c, 'player')) return;
 
-  busy        = true;
-  state.phase = 'animating';
+  const myTick = gameTick;
+  busy         = true;
+  state.phase  = 'animating';
   state.playerMoves++;
   playPlacementSound();
   updateUI();
 
   try {
     const playerWinner = await runMove(r, c, 'player');
+    if (gameTick !== myTick) return;   // restart happened during player chain
     if (playerWinner) { endGame(playerWinner); return; }
 
     state.turn = 'ai';
     updateUI();
     await sleep(480);
+    if (gameTick !== myTick) return;   // restart happened during AI delay
 
     const aiMove = computeAIMove(state.grid);
     if (!aiMove) { endGame('player'); return; }
 
     const aiWinner = await runMove(aiMove[0], aiMove[1], 'ai');
+    if (gameTick !== myTick) return;   // restart happened during AI chain
     if (aiWinner) { endGame(aiWinner); return; }
 
     state.turn  = 'player';
@@ -922,11 +927,13 @@ async function doPlayerMove(r, c) {
     updateUI();
   } catch (err) {
     console.error('doPlayerMove error:', err);
-    state.turn  = 'player';
-    state.phase = 'input';
-    updateUI();
+    if (gameTick === myTick) {
+      state.turn  = 'player';
+      state.phase = 'input';
+      updateUI();
+    }
   } finally {
-    busy = false;
+    if (gameTick === myTick) busy = false;
   }
 }
 
@@ -1002,6 +1009,7 @@ function updateUI() {
 }
 
 function restart() {
+  gameTick++;
   state     = newState();
   effects    = [];
   particles  = [];
