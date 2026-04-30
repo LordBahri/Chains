@@ -508,7 +508,7 @@ const OC_MAX  = 3;
 let state     = null;
 let hoverCell = null;
 let busy      = false;
-let gameTick  = 0;   // incremented on restart; lets stale async calls self-cancel
+let gameId    = 0;  // incremented on every restart; async ops abort when it changes
 
 function newState() {
   return {
@@ -865,12 +865,12 @@ async function runMove(r, c, player, tick) {
     spawnParticles(step.r, step.c, step.owner);
     triggerShake(i + 1);
     await sleep(isBig ? 110 : 80);
-    if (gameTick !== tick) return null;  // restart fired — stop before touching new state
+    if (gameId !== tick) return null;  // restart fired — stop before touching new state
     const prev = state.grid;
     state.grid = step.snap;
     applyOwnerTransitions(prev, state.grid);
   }
-  if (gameTick !== tick) return null;
+  if (gameId !== tick) return null;
   if (player === 'player') {
     state.multiplier = 1;
     updateScoreDisplay();
@@ -884,7 +884,6 @@ async function runMove(r, c, player, tick) {
 function endGame(winner) {
   state.winner = winner;
   state.phase  = 'over';
-  // Moves goal can only be met by winning within the limit.
   if (!state.goal.done && state.goal.type === 'moves'
       && winner === 'player' && state.playerMoves <= state.goal.target) {
     state.goal.done = true;
@@ -895,50 +894,54 @@ function endGame(winner) {
   if (winner === 'player') playWinSound();
   updateScoreDisplay();
   updateUI();
-  busy = false;
+  // caller is responsible for clearing busy
 }
 
 async function doPlayerMove(r, c) {
   if (busy || state.phase !== 'input' || state.turn !== 'player') return;
   if (!canPlay(state.grid, r, c, 'player')) return;
 
-  const myTick = gameTick;
+  const id = gameId;
   busy         = true;
   state.phase  = 'animating';
   state.playerMoves++;
   playPlacementSound();
   updateUI();
 
-  try {
-    const playerWinner = await runMove(r, c, 'player', myTick);
-    if (gameTick !== myTick) return;
-    if (playerWinner) { endGame(playerWinner); return; }
+  const winner = await runMove(r, c, 'player', id);
 
-    state.turn = 'ai';
-    updateUI();
-    await sleep(480);
-    if (gameTick !== myTick) return;
+  if (gameId !== id) { busy = false; return; }  // restarted mid-chain
 
-    const aiMove = computeAIMove(state.grid);
-    if (!aiMove) { endGame('player'); return; }
+  if (winner) { endGame(winner); busy = false; return; }
 
-    const aiWinner = await runMove(aiMove[0], aiMove[1], 'ai', myTick);
-    if (gameTick !== myTick) return;
-    if (aiWinner) { endGame(aiWinner); return; }
+  // Hand off to AI after a short delay; free busy so restart works during wait
+  state.turn  = 'ai';
+  state.phase = 'input';
+  updateUI();
+  busy = false;
+  setTimeout(doAIMove, 480, id);
+}
 
-    state.turn  = 'player';
-    state.phase = 'input';
-    updateUI();
-  } catch (err) {
-    console.error('doPlayerMove error:', err);
-    if (gameTick === myTick) {
-      state.turn  = 'player';
-      state.phase = 'input';
-      updateUI();
-    }
-  } finally {
-    if (gameTick === myTick) busy = false;
-  }
+async function doAIMove(id) {
+  if (gameId !== id) return;                         // restarted during delay
+  if (state.phase !== 'input' || state.turn !== 'ai') return;
+
+  busy        = true;
+  state.phase = 'animating';
+
+  const aiMove = computeAIMove(state.grid);
+  if (!aiMove) { endGame('player'); busy = false; return; }
+
+  const winner = await runMove(aiMove[0], aiMove[1], 'ai', id);
+
+  if (gameId !== id) { busy = false; return; }       // restarted mid-chain
+
+  if (winner) { endGame(winner); busy = false; return; }
+
+  state.turn  = 'player';
+  state.phase = 'input';
+  updateUI();
+  busy = false;
 }
 
 function checkGoalCompletion() {
@@ -1013,16 +1016,16 @@ function updateUI() {
 }
 
 function restart() {
-  gameTick++;
-  state     = newState();
+  gameId++;
+  busy       = false;
+  state      = newState();
   effects    = [];
   particles  = [];
   flashes    = [];
   pops       = [];
   floatTexts = [];
-  cellTr    = makeTrGrid();
-  shake     = null;
-  busy      = false;
+  cellTr     = makeTrGrid();
+  shake      = null;
   updateUI();
   updateScoreDisplay();
   updateGoalDisplay();
