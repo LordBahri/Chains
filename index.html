@@ -903,23 +903,31 @@ async function doPlayerMove(r, c) {
   playPlacementSound();
   updateUI();
 
-  const playerWinner = await runMove(r, c, 'player');
-  if (playerWinner) { endGame(playerWinner); return; }
+  try {
+    const playerWinner = await runMove(r, c, 'player');
+    if (playerWinner) { endGame(playerWinner); return; }
 
-  state.turn = 'ai';
-  updateUI();
-  await sleep(480);
+    state.turn = 'ai';
+    updateUI();
+    await sleep(480);
 
-  const aiMove = computeAIMove(state.grid);
-  if (!aiMove) { endGame('player'); return; }
+    const aiMove = computeAIMove(state.grid);
+    if (!aiMove) { endGame('player'); return; }
 
-  const aiWinner = await runMove(aiMove[0], aiMove[1], 'ai');
-  if (aiWinner) { endGame(aiWinner); return; }
+    const aiWinner = await runMove(aiMove[0], aiMove[1], 'ai');
+    if (aiWinner) { endGame(aiWinner); return; }
 
-  state.turn  = 'player';
-  state.phase = 'input';
-  updateUI();
-  busy = false;
+    state.turn  = 'player';
+    state.phase = 'input';
+    updateUI();
+  } catch (err) {
+    console.error('doPlayerMove error:', err);
+    state.turn  = 'player';
+    state.phase = 'input';
+    updateUI();
+  } finally {
+    busy = false;
+  }
 }
 
 function checkGoalCompletion() {
