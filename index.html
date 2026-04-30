@@ -355,6 +355,33 @@ function playPlacementSound() {
   } catch (e) {}
 }
 
+// Pentatonic scale intervals (semitones): 0,2,4,7,9,12,14,16,19,21
+const CHAIN_SEMITONES = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21];
+function playChainTone(step) {
+  try {
+    if (!audioCtx) audioCtx = new AudioContext();
+    const ctx  = audioCtx;
+    const t    = ctx.currentTime;
+    const dur  = 0.07;
+    const idx  = Math.min(step, CHAIN_SEMITONES.length - 1);
+    const freq = 280 * Math.pow(2, CHAIN_SEMITONES[idx] / 12);
+
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, t);
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.001, t);
+    gain.gain.linearRampToValueAtTime(0.18, t + 0.006);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + dur);
+  } catch (e) {}
+}
+
 // Small orbs that fly from the exploding cell toward each of its neighbors.
 function spawnParticles(r, c, owner) {
   const [sx, sy, sw, sh] = cellRect(r, c);
@@ -802,6 +829,7 @@ async function runMove(r, c, player) {
     const pitch  = Math.pow(1.18, i) * (isBig ? 0.7 : 1);
     const volume = Math.min(0.42, 0.28 + i * 0.025);
     explode(step.r, step.c, step.owner, pitch, volume);
+    if (steps.length > 1) playChainTone(i);
     spawnParticles(step.r, step.c, step.owner);
     triggerShake(i + 1);
     await sleep(isBig ? 110 : 80);
