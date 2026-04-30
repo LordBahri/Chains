@@ -289,14 +289,16 @@ function spawnExplosion(r, c, owner) {
 
 let audioCtx = null;
 
-// pitch rises with each chain step; resets to 1 when a new chain starts at i=0.
-function playExplosionSound(pitch = 1) {
+// pitch and volume both scale with chain depth.
+// Big-chain steps use a shorter buffer so overlapping sounds don't pile up.
+function playExplosionSound(pitch = 1, volume = 0.28) {
   try {
     if (!audioCtx) audioCtx = new AudioContext();
     const ctx = audioCtx;
     const t   = ctx.currentTime;
+    const dur = volume > 0.34 ? 0.08 : 0.12;   // shorter duration for big chains
 
-    const buf  = ctx.createBuffer(1, ctx.sampleRate * 0.12, ctx.sampleRate);
+    const buf  = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
     const data = buf.getChannelData(0);
     for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
 
@@ -306,11 +308,11 @@ function playExplosionSound(pitch = 1) {
     const filter = ctx.createBiquadFilter();
     filter.type  = 'lowpass';
     filter.frequency.setValueAtTime(400 * pitch, t);
-    filter.frequency.exponentialRampToValueAtTime(60 * pitch, t + 0.1);
+    filter.frequency.exponentialRampToValueAtTime(60 * pitch, t + dur * 0.85);
 
     const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0.28, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+    gain.gain.setValueAtTime(volume, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
 
     src.connect(filter);
     filter.connect(gain);
@@ -320,9 +322,28 @@ function playExplosionSound(pitch = 1) {
 }
 
 // Trigger animation and sound together.
-function explode(r, c, owner, pitch = 1) {
+function explode(r, c, owner, pitch = 1, volume = 0.28) {
   spawnExplosion(r, c, owner);
-  playExplosionSound(pitch);
+  playExplosionSound(pitch, volume);
+}
+
+function playPlacementSound() {
+  try {
+    if (!audioCtx) audioCtx = new AudioContext();
+    const ctx = audioCtx;
+    const t   = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(520, t);
+    osc.frequency.exponentialRampToValueAtTime(340, t + 0.08);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.12, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t);
+    osc.stop(t + 0.12);
+  } catch (e) {}
 }
 
 // Small orbs that fly from the exploding cell toward each of its neighbors.
@@ -768,10 +789,13 @@ async function runMove(r, c, player) {
       spawnFloatText(step.r, step.c, `+${earned}`, COLORS.playerDot);
       updateScoreDisplay();
     }
-    explode(step.r, step.c, step.owner, Math.pow(1.18, i));
+    const isBig  = i >= 3;
+    const pitch  = Math.pow(1.18, i) * (isBig ? 0.7 : 1);
+    const volume = Math.min(0.42, 0.28 + i * 0.025);
+    explode(step.r, step.c, step.owner, pitch, volume);
     spawnParticles(step.r, step.c, step.owner);
     triggerShake(i + 1);
-    await sleep(80);
+    await sleep(isBig ? 110 : 80);
     const prev = state.grid;
     state.grid = step.snap;
     applyOwnerTransitions(prev, state.grid);
@@ -809,6 +833,7 @@ async function doPlayerMove(r, c) {
   busy        = true;
   state.phase = 'animating';
   state.playerMoves++;
+  playPlacementSound();
   updateUI();
 
   const playerWinner = await runMove(r, c, 'player');
