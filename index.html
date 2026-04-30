@@ -556,7 +556,9 @@ function resolveChains(grid) {
   const g = cloneGrid(grid);
 
   let exploded = true;
-  while (exploded) {
+  let safety = 0;
+  const MAX_STEPS = GRID * GRID * 8;
+  while (exploded && safety++ < MAX_STEPS) {
     exploded = false;
     outer:
     for (let r = 0; r < GRID; r++) {
@@ -838,7 +840,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 // Animates a single move and all resulting chain reactions.
 // Returns the winner string if the game ended, otherwise null.
-async function runMove(r, c, player) {
+async function runMove(r, c, player, tick) {
   const before = state.grid;
   state.grid = applyMove(state.grid, r, c, player);
   applyOwnerTransitions(before, state.grid);
@@ -863,10 +865,12 @@ async function runMove(r, c, player) {
     spawnParticles(step.r, step.c, step.owner);
     triggerShake(i + 1);
     await sleep(isBig ? 110 : 80);
+    if (gameTick !== tick) return null;  // restart fired — stop before touching new state
     const prev = state.grid;
     state.grid = step.snap;
     applyOwnerTransitions(prev, state.grid);
   }
+  if (gameTick !== tick) return null;
   if (player === 'player') {
     state.multiplier = 1;
     updateScoreDisplay();
@@ -906,20 +910,20 @@ async function doPlayerMove(r, c) {
   updateUI();
 
   try {
-    const playerWinner = await runMove(r, c, 'player');
-    if (gameTick !== myTick) return;   // restart happened during player chain
+    const playerWinner = await runMove(r, c, 'player', myTick);
+    if (gameTick !== myTick) return;
     if (playerWinner) { endGame(playerWinner); return; }
 
     state.turn = 'ai';
     updateUI();
     await sleep(480);
-    if (gameTick !== myTick) return;   // restart happened during AI delay
+    if (gameTick !== myTick) return;
 
     const aiMove = computeAIMove(state.grid);
     if (!aiMove) { endGame('player'); return; }
 
-    const aiWinner = await runMove(aiMove[0], aiMove[1], 'ai');
-    if (gameTick !== myTick) return;   // restart happened during AI chain
+    const aiWinner = await runMove(aiMove[0], aiMove[1], 'ai', myTick);
+    if (gameTick !== myTick) return;
     if (aiWinner) { endGame(aiWinner); return; }
 
     state.turn  = 'player';
