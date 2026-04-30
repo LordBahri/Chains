@@ -382,6 +382,35 @@ function playChainTone(step) {
   } catch (e) {}
 }
 
+function playWinSound() {
+  try {
+    if (!audioCtx) audioCtx = new AudioContext();
+    const ctx = audioCtx;
+    // Three-note major chord arpeggio: root, major third, perfect fifth (one octave up)
+    const notes = [
+      { freq: 523.25, delay: 0,    dur: 0.55 },  // C5
+      { freq: 659.25, delay: 0.12, dur: 0.50 },  // E5
+      { freq: 783.99, delay: 0.24, dur: 0.60 },  // G5
+    ];
+    for (const { freq, delay, dur } of notes) {
+      const t   = ctx.currentTime + delay;
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, t);
+
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.001, t);
+      gain.gain.linearRampToValueAtTime(0.16, t + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + dur);
+    }
+  } catch (e) {}
+}
+
 // Small orbs that fly from the exploding cell toward each of its neighbors.
 function spawnParticles(r, c, owner) {
   const [sx, sy, sw, sh] = cellRect(r, c);
@@ -858,6 +887,7 @@ function endGame(winner) {
   }
   coins += Math.floor(state.score / 50);
   localStorage.setItem('cra_coins', coins);
+  if (winner === 'player') playWinSound();
   updateScoreDisplay();
   updateUI();
   busy = false;
