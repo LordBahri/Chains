@@ -294,30 +294,39 @@ let audioCtx = null;
 function playExplosionSound(pitch = 1, volume = 0.28) {
   try {
     if (!audioCtx) audioCtx = new AudioContext();
-    const ctx = audioCtx;
-    const t   = ctx.currentTime;
-    const dur = volume > 0.34 ? 0.08 : 0.12;   // shorter duration for big chains
+    const ctx  = audioCtx;
+    const t    = ctx.currentTime;
+    const dur  = 0.13;
+    const peak = 0.008; // fade-in end time
 
-    const buf  = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    // Sine oscillator sweeps down for a soft "pop" feel
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(320 * pitch, t);
+    osc.frequency.exponentialRampToValueAtTime(90 * pitch, t + dur * 0.8);
 
-    const src  = ctx.createBufferSource();
-    src.buffer = buf;
-
-    const filter = ctx.createBiquadFilter();
-    filter.type  = 'lowpass';
-    filter.frequency.setValueAtTime(400 * pitch, t);
-    filter.frequency.exponentialRampToValueAtTime(60 * pitch, t + dur * 0.85);
+    // Second oscillator one octave up adds body without harshness
+    const osc2 = ctx.createOscillator();
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(640 * pitch, t);
+    osc2.frequency.exponentialRampToValueAtTime(180 * pitch, t + dur * 0.6);
 
     const gain = ctx.createGain();
-    gain.gain.setValueAtTime(volume, t);
+    gain.gain.setValueAtTime(0.001, t);
+    gain.gain.linearRampToValueAtTime(volume, t + peak);
     gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
 
-    src.connect(filter);
-    filter.connect(gain);
+    const gain2 = ctx.createGain();
+    gain2.gain.setValueAtTime(0.001, t);
+    gain2.gain.linearRampToValueAtTime(volume * 0.4, t + peak);
+    gain2.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.6);
+
+    osc.connect(gain);
+    osc2.connect(gain2);
     gain.connect(ctx.destination);
-    src.start();
+    gain2.connect(ctx.destination);
+    osc.start(t);  osc.stop(t + dur);
+    osc2.start(t); osc2.stop(t + dur * 0.6);
   } catch (e) {}
 }
 
