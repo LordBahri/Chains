@@ -285,6 +285,46 @@ function spawnExplosion(r, c, owner) {
   flashes.push({ r, c, color, born: now, life: 220 });
 }
 
+// ─── Audio ────────────────────────────────────────────────────────────────────
+
+let audioCtx = null;
+
+function playExplosionSound() {
+  try {
+    if (!audioCtx) audioCtx = new AudioContext();
+    const ctx = audioCtx;
+    const t   = ctx.currentTime;
+
+    // Short white-noise burst filtered down to a low thud.
+    const buf  = ctx.createBuffer(1, ctx.sampleRate * 0.12, ctx.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+
+    const src   = ctx.createBufferSource();
+    src.buffer  = buf;
+
+    const filter = ctx.createBiquadFilter();
+    filter.type  = 'lowpass';
+    filter.frequency.setValueAtTime(400, t);
+    filter.frequency.exponentialRampToValueAtTime(60, t + 0.1);
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.28, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+    src.start();
+  } catch (e) {}
+}
+
+// Trigger animation and sound together.
+function explode(r, c, owner) {
+  spawnExplosion(r, c, owner);
+  playExplosionSound();
+}
+
 // Small orbs that fly from the exploding cell toward each of its neighbors.
 function spawnParticles(r, c, owner) {
   const [sx, sy, sw, sh] = cellRect(r, c);
@@ -728,7 +768,7 @@ async function runMove(r, c, player) {
       spawnFloatText(step.r, step.c, `+${earned}`, COLORS.playerDot);
       updateScoreDisplay();
     }
-    spawnExplosion(step.r, step.c, step.owner);
+    explode(step.r, step.c, step.owner);
     spawnParticles(step.r, step.c, step.owner);
     triggerShake(i + 1);
     await sleep(80);
