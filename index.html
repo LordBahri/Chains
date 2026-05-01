@@ -521,7 +521,7 @@ let gameId    = 0;  // incremented on every restart; async ops abort when it cha
 function newState() {
   return {
     grid:       Array.from({ length: GRID }, () =>
-                  Array.from({ length: GRID }, () => ({ owner: null, energy: 0 }))),
+                  Array.from({ length: GRID }, () => ({ owner: null, energy: 0, shield: Math.random() < 0.12 }))),
     turn:       'player',
     phase:      'input',  // 'input' | 'animating' | 'over'
     winner:     null,
@@ -552,8 +552,9 @@ function canPlay(grid, r, c, player) {
 
 function applyMove(grid, r, c, player) {
   const g = cloneGrid(grid);
-  g[r][c].owner = player;
+  g[r][c].owner  = player;
   g[r][c].energy += 1;
+  g[r][c].shield = false;  // manual placement always removes shield
   return g;
 }
 
@@ -578,8 +579,12 @@ function resolveChains(grid) {
           for (const [nr, nc] of neighbors(r, c)) {
             const bonus = (owner === 'player' && upgOvercharge > 0
               && Math.random() < 0.15 * upgOvercharge) ? 2 : 1;
-            g[nr][nc].energy += bonus;
-            g[nr][nc].owner = owner;
+            if (g[nr][nc].shield && g[nr][nc].owner !== owner) {
+              g[nr][nc].shield = false;  // shield absorbs this hit
+            } else {
+              g[nr][nc].energy += bonus;
+              g[nr][nc].owner  = owner;
+            }
           }
           steps.push({ r, c, owner, snap: cloneGrid(g) });
           exploded = true;
@@ -699,6 +704,27 @@ function drawCell(r, c) {
   }
 
   if (cell.energy > 0) drawDots(x, y, w, h, cell);
+
+  if (cell.shield) {
+    const pulse = 0.55 + 0.45 * Math.sin(renderTime * 0.0025 + (r * 3 + c) * 0.9);
+    ctx.strokeStyle = `rgba(255,210,50,${0.55 + 0.35 * pulse})`;
+    ctx.lineWidth   = 2;
+    ctx.shadowColor = 'rgba(255,200,40,0.7)';
+    ctx.shadowBlur  = 6 + pulse * 6;
+    const inset = 5;
+    // shield shape: rect with pointed bottom
+    const sx = x + inset, sy = y + inset;
+    const sw = w - inset * 2, sh = h - inset * 2;
+    ctx.beginPath();
+    ctx.moveTo(sx,          sy);
+    ctx.lineTo(sx + sw,     sy);
+    ctx.lineTo(sx + sw,     sy + sh * 0.62);
+    ctx.lineTo(sx + sw / 2, sy + sh);
+    ctx.lineTo(sx,          sy + sh * 0.62);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
 }
 
 function drawGridLines() {
