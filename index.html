@@ -518,11 +518,48 @@ let hoverCell = null;
 let busy      = false;
 let gameId    = 0;  // incremented on every restart; async ops abort when it changes
 
-function genBlockedCells() {
+// ─── Board Layouts ────────────────────────────────────────────────────────────
+
+const BOARD_LAYOUTS = {
+  normal: () => new Set(),
+
+  diamond: () => {
+    const hidden = new Set(), cx = (GRID - 1) / 2;
+    for (let r = 0; r < GRID; r++)
+      for (let c = 0; c < GRID; c++)
+        if (Math.abs(r - cx) + Math.abs(c - cx) > cx + 0.5)
+          hidden.add(`${r},${c}`);
+    return hidden;
+  },
+
+  cross: () => {
+    const hidden = new Set();
+    const mid1 = Math.floor(GRID / 2) - 1, mid2 = Math.floor(GRID / 2);
+    for (let r = 0; r < GRID; r++)
+      for (let c = 0; c < GRID; c++)
+        if (r !== mid1 && r !== mid2 && c !== mid1 && c !== mid2)
+          hidden.add(`${r},${c}`);
+    return hidden;
+  },
+
+  cornersRemoved: () => {
+    const hidden = new Set(), cut = 2;
+    for (let r = 0; r < GRID; r++)
+      for (let c = 0; c < GRID; c++)
+        if ((r < cut || r >= GRID - cut) && (c < cut || c >= GRID - cut))
+          hidden.add(`${r},${c}`);
+    return hidden;
+  },
+};
+
+const LAYOUT_NAMES = Object.keys(BOARD_LAYOUTS);
+
+function genBlockedCells(hiddenSet) {
   const candidates = [];
   for (let r = 1; r <= GRID - 2; r++)
     for (let c = 1; c <= GRID - 2; c++)
-      candidates.push([r, c]);
+      if (!hiddenSet.has(`${r},${c}`) && !hiddenSet.has(`${GRID-1-r},${GRID-1-c}`))
+        candidates.push([r, c]);
   for (let i = candidates.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
@@ -540,15 +577,19 @@ function genBlockedCells() {
 }
 
 function newState() {
-  const blockedSet = genBlockedCells();
+  const layoutName = LAYOUT_NAMES[Math.floor(Math.random() * LAYOUT_NAMES.length)];
+  const hiddenSet  = BOARD_LAYOUTS[layoutName]();
+  const blockedSet = genBlockedCells(hiddenSet);
   return {
+    layout:     layoutName,
     grid:       Array.from({ length: GRID }, (_, r) =>
                   Array.from({ length: GRID }, (_, c) => {
-                    const blocked = blockedSet.has(`${r},${c}`);
+                    const hidden  = hiddenSet.has(`${r},${c}`);
+                    const blocked = !hidden && blockedSet.has(`${r},${c}`);
                     return { owner: null, energy: 0,
-                      shield:   !blocked && Math.random() < 0.12,
-                      critical: !blocked && Math.random() < 0.08,
-                      blocked };
+                      shield:   !hidden && !blocked && Math.random() < 0.12,
+                      critical: !hidden && !blocked && Math.random() < 0.08,
+                      hidden, blocked };
                   })),
     turn:       'player',
     phase:      'input',  // 'input' | 'animating' | 'over'
@@ -568,14 +609,15 @@ function cloneGrid(grid) {
   return grid.map(row => row.map(cell => ({ ...cell })));
 }
 
-function neighbors(r, c) {
+function neighbors(r, c, grid = state.grid) {
   return [[r-1,c],[r+1,c],[r,c-1],[r,c+1]]
-    .filter(([nr, nc]) => nr >= 0 && nr < GRID && nc >= 0 && nc < GRID);
+    .filter(([nr, nc]) => nr >= 0 && nr < GRID && nc >= 0 && nc < GRID
+                       && !grid[nr][nc].hidden);
 }
 
 function canPlay(grid, r, c, player) {
-  const { owner, shield, blocked } = grid[r][c];
-  return !blocked && !shield && (owner === null || owner === player);
+  const { owner, shield, blocked, hidden } = grid[r][c];
+  return !hidden && !blocked && !shield && (owner === null || owner === player);
 }
 
 function applyMove(grid, r, c, player) {
@@ -605,7 +647,7 @@ function resolveChains(grid) {
           const isCrit = g[r][c].critical;
           g[r][c].energy -= OVERFLOW;
           if (g[r][c].energy === 0) g[r][c].owner = null;
-          for (const [nr, nc] of neighbors(r, c)) {
+          for (const [nr, nc] of neighbors(r, c, g)) {
             const base  = isCrit ? 2 : 1;
             const bonus = (owner === 'player' && upgOvercharge > 0
               && Math.random() < 0.15 * upgOvercharge) ? base + 1 : base;
@@ -720,6 +762,12 @@ function drawDots(x, y, w, h, cell) {
 function drawCell(r, c) {
   const [x, y, w, h] = cellRect(r, c);
   const cell = state.grid[r][c];
+
+  if (cell.hidden) {
+    ctx.fillStyle = COLORS.bg;
+    ctx.fillRect(x, y, w, h);
+    return;
+  }
 
   if (cell.blocked) {
     ctx.fillStyle = '#090912';
@@ -910,6 +958,14 @@ function renderLoop(timestamp) {
       for (let c = 0; c < GRID; c++)
         drawCell(r, c);
     drawGridLines();
+    // Paint over grid lines for hidden cells so layout edges are clean.
+    ctx.fillStyle = COLORS.bg;
+    for (let r = 0; r < GRID; r++)
+      for (let c = 0; c < GRID; c++)
+        if (state.grid[r][c].hidden) {
+          const [x, y, w, h] = cellRect(r, c);
+          ctx.fillRect(x, y, w, h);
+        }
     drawFlashes(timestamp);
     drawParticles(timestamp);
     drawEffects(timestamp);
@@ -1141,15 +1197,19 @@ function bindInput() {
     const pos = canvasToGrid(e);
     if (pos) {
       const cell = state.grid[pos[0]][pos[1]];
-      if (!cell.shield && !cell.blocked) doPlayerMove(pos[0], pos[1]);
+      if (!cell.hidden && !cell.shield && !cell.blocked) doPlayerMove(pos[0], pos[1]);
     }
   });
 
   canvas.addEventListener('mousemove', e => {
     hoverCell = canvasToGrid(e);
-    const impassable = hoverCell && (state.grid[hoverCell[0]][hoverCell[1]].shield
-                                  || state.grid[hoverCell[0]][hoverCell[1]].blocked);
-    canvas.style.cursor = impassable ? 'not-allowed' : 'pointer';
+    if (hoverCell) {
+      const cell = state.grid[hoverCell[0]][hoverCell[1]];
+      if (cell.hidden) { canvas.style.cursor = 'default'; return; }
+      canvas.style.cursor = (cell.shield || cell.blocked) ? 'not-allowed' : 'pointer';
+    } else {
+      canvas.style.cursor = 'pointer';
+    }
   });
   canvas.addEventListener('mouseleave', () => { hoverCell = null; });
 
