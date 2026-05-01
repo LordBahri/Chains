@@ -902,46 +902,48 @@ async function doPlayerMove(r, c) {
   if (!canPlay(state.grid, r, c, 'player')) return;
 
   const id = gameId;
-  busy         = true;
-  state.phase  = 'animating';
+  busy        = true;
+  state.phase = 'animating';
   state.playerMoves++;
   playPlacementSound();
   updateUI();
 
-  const winner = await runMove(r, c, 'player', id);
+  try {
+    // ── player turn ──────────────────────────────────────────────────────
+    const w1 = await runMove(r, c, 'player', id);
+    if (gameId !== id) return;
+    if (w1) { endGame(w1); return; }
 
-  if (gameId !== id) { busy = false; return; }  // restarted mid-chain
+    // ── handoff to AI ────────────────────────────────────────────────────
+    state.turn = 'ai';
+    updateUI();
+    await sleep(480);
+    if (gameId !== id) return;
 
-  if (winner) { endGame(winner); busy = false; return; }
+    const aiMove = computeAIMove(state.grid);
+    if (!aiMove) { endGame('player'); return; }
 
-  // Hand off to AI after a short delay; free busy so restart works during wait
-  state.turn  = 'ai';
-  state.phase = 'input';
-  updateUI();
-  busy = false;
-  setTimeout(doAIMove, 480, id);
-}
+    // ── AI turn ──────────────────────────────────────────────────────────
+    const w2 = await runMove(aiMove[0], aiMove[1], 'ai', id);
+    if (gameId !== id) return;
+    if (w2) { endGame(w2); return; }
 
-async function doAIMove(id) {
-  if (gameId !== id) return;                         // restarted during delay
-  if (state.phase !== 'input' || state.turn !== 'ai') return;
+    state.turn  = 'player';
+    state.phase = 'input';
+    updateUI();
 
-  busy        = true;
-  state.phase = 'animating';
-
-  const aiMove = computeAIMove(state.grid);
-  if (!aiMove) { endGame('player'); busy = false; return; }
-
-  const winner = await runMove(aiMove[0], aiMove[1], 'ai', id);
-
-  if (gameId !== id) { busy = false; return; }       // restarted mid-chain
-
-  if (winner) { endGame(winner); busy = false; return; }
-
-  state.turn  = 'player';
-  state.phase = 'input';
-  updateUI();
-  busy = false;
+  } catch (err) {
+    console.error('doPlayerMove error:', err);
+    // recover so the player can still play
+    if (gameId === id) {
+      state.turn  = 'player';
+      state.phase = 'input';
+      updateUI();
+    }
+  } finally {
+    // always release the lock for the current game
+    if (gameId === id) busy = false;
+  }
 }
 
 function checkGoalCompletion() {
