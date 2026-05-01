@@ -518,10 +518,38 @@ let hoverCell = null;
 let busy      = false;
 let gameId    = 0;  // incremented on every restart; async ops abort when it changes
 
+function genBlockedCells() {
+  const candidates = [];
+  for (let r = 1; r <= GRID - 2; r++)
+    for (let c = 1; c <= GRID - 2; c++)
+      candidates.push([r, c]);
+  for (let i = candidates.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+  }
+  const blocked = new Set();
+  let count = 0;
+  for (const [r, c] of candidates) {
+    if (count >= 2) break;
+    const key = `${r},${c}`, mkey = `${GRID-1-r},${GRID-1-c}`;
+    if (!blocked.has(key) && !blocked.has(mkey)) {
+      blocked.add(key); blocked.add(mkey); count++;
+    }
+  }
+  return blocked;
+}
+
 function newState() {
+  const blockedSet = genBlockedCells();
   return {
-    grid:       Array.from({ length: GRID }, () =>
-                  Array.from({ length: GRID }, () => ({ owner: null, energy: 0, shield: Math.random() < 0.12, critical: Math.random() < 0.08 }))),
+    grid:       Array.from({ length: GRID }, (_, r) =>
+                  Array.from({ length: GRID }, (_, c) => {
+                    const blocked = blockedSet.has(`${r},${c}`);
+                    return { owner: null, energy: 0,
+                      shield:   !blocked && Math.random() < 0.12,
+                      critical: !blocked && Math.random() < 0.08,
+                      blocked };
+                  })),
     turn:       'player',
     phase:      'input',  // 'input' | 'animating' | 'over'
     winner:     null,
@@ -546,8 +574,8 @@ function neighbors(r, c) {
 }
 
 function canPlay(grid, r, c, player) {
-  const { owner, shield } = grid[r][c];
-  return !shield && (owner === null || owner === player);
+  const { owner, shield, blocked } = grid[r][c];
+  return !blocked && !shield && (owner === null || owner === player);
 }
 
 function applyMove(grid, r, c, player) {
@@ -692,6 +720,18 @@ function drawDots(x, y, w, h, cell) {
 function drawCell(r, c) {
   const [x, y, w, h] = cellRect(r, c);
   const cell = state.grid[r][c];
+
+  if (cell.blocked) {
+    ctx.fillStyle = '#090912';
+    ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
+    ctx.strokeStyle = 'rgba(100,100,140,0.4)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x + 9, y + 9); ctx.lineTo(x + w - 9, y + h - 9);
+    ctx.moveTo(x + w - 9, y + 9); ctx.lineTo(x + 9, y + h - 9);
+    ctx.stroke();
+    return;
+  }
 
   const isHoverable = hoverCell && hoverCell[0] === r && hoverCell[1] === c
                       && state.phase === 'input' && state.turn === 'player'
@@ -1099,13 +1139,17 @@ function canvasToGrid(event) {
 function bindInput() {
   canvas.addEventListener('click', e => {
     const pos = canvasToGrid(e);
-    if (pos && !state.grid[pos[0]][pos[1]].shield) doPlayerMove(pos[0], pos[1]);
+    if (pos) {
+      const cell = state.grid[pos[0]][pos[1]];
+      if (!cell.shield && !cell.blocked) doPlayerMove(pos[0], pos[1]);
+    }
   });
 
   canvas.addEventListener('mousemove', e => {
     hoverCell = canvasToGrid(e);
-    const shielded = hoverCell && state.grid[hoverCell[0]][hoverCell[1]].shield;
-    canvas.style.cursor = shielded ? 'not-allowed' : 'pointer';
+    const impassable = hoverCell && (state.grid[hoverCell[0]][hoverCell[1]].shield
+                                  || state.grid[hoverCell[0]][hoverCell[1]].blocked);
+    canvas.style.cursor = impassable ? 'not-allowed' : 'pointer';
   });
   canvas.addEventListener('mouseleave', () => { hoverCell = null; });
 
