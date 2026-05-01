@@ -1087,10 +1087,14 @@ function canvasToGrid(event) {
 function bindInput() {
   canvas.addEventListener('click', e => {
     const pos = canvasToGrid(e);
-    if (pos) doPlayerMove(pos[0], pos[1]);
+    if (pos && !state.grid[pos[0]][pos[1]].shield) doPlayerMove(pos[0], pos[1]);
   });
 
-  canvas.addEventListener('mousemove', e => { hoverCell = canvasToGrid(e); });
+  canvas.addEventListener('mousemove', e => {
+    hoverCell = canvasToGrid(e);
+    const shielded = hoverCell && state.grid[hoverCell[0]][hoverCell[1]].shield;
+    canvas.style.cursor = shielded ? 'not-allowed' : 'pointer';
+  });
   canvas.addEventListener('mouseleave', () => { hoverCell = null; });
 
   document.getElementById('btn-restart').addEventListener('click', restart);
