@@ -434,8 +434,16 @@ function triggerShake(chainStep = 1) {
 // Quick ring that pops out when the player places a piece.
 function spawnPop(r, c, owner) {
   const [x, y, w, h] = cellRect(r, c);
-  pops.push({ x: x + w/2, y: y + h/2, color: ownerDotColor(owner),
-              born: performance.now(), life: 160 });
+  const cx = x + w/2, cy = y + h/2;
+  const color = ownerDotColor(owner);
+  const now = performance.now();
+  // Standard placement ring
+  pops.push({ x: cx, y: cy, color, born: now, life: 160 });
+  // Extra ring for AI so the move is always clearly visible
+  if (owner === 'ai') {
+    pops.push({ x: cx, y: cy, color, born: now + 60, life: 220 });
+    flashes.push({ r, c, color, born: now, life: 280 });
+  }
 }
 
 // Floating score label rising from an explosion centre.
@@ -810,28 +818,32 @@ function drawEffects(timestamp) {
 // ─── Render Loop ──────────────────────────────────────────────────────────────
 
 function renderLoop(timestamp) {
-  renderTime = timestamp;
+  try {
+    renderTime = timestamp;
 
-  // Clear outside the shake transform so any revealed edge shows the bg color.
-  ctx.fillStyle = COLORS.bg;
-  ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+    // Clear outside the shake transform so any revealed edge shows the bg color.
+    ctx.fillStyle = COLORS.bg;
+    ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
 
-  ctx.save();
-  ctx.translate(...getShakeOffset());
+    ctx.save();
+    ctx.translate(...getShakeOffset());
 
-  for (let r = 0; r < GRID; r++)
-    for (let c = 0; c < GRID; c++)
-      drawCell(r, c);
-  drawGridLines();
-  drawFlashes(timestamp);
-  drawParticles(timestamp);
-  drawEffects(timestamp);
-  drawPops(timestamp);
-  drawFloatTexts(timestamp);
+    for (let r = 0; r < GRID; r++)
+      for (let c = 0; c < GRID; c++)
+        drawCell(r, c);
+    drawGridLines();
+    drawFlashes(timestamp);
+    drawParticles(timestamp);
+    drawEffects(timestamp);
+    drawPops(timestamp);
+    drawFloatTexts(timestamp);
 
-  ctx.restore();
-
-  requestAnimationFrame(renderLoop);
+    ctx.restore();
+  } catch (e) {
+    console.error('renderLoop error:', e);
+    try { ctx.restore(); } catch (_) {}
+  }
+  requestAnimationFrame(renderLoop);  // always keep the loop alive
 }
 
 // ─── Game Flow ────────────────────────────────────────────────────────────────
