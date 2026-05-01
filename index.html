@@ -546,8 +546,8 @@ function neighbors(r, c) {
 }
 
 function canPlay(grid, r, c, player) {
-  const { owner } = grid[r][c];
-  return owner === null || owner === player;
+  const { owner, shield } = grid[r][c];
+  return !shield && (owner === null || owner === player);
 }
 
 function applyMove(grid, r, c, player) {
