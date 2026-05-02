@@ -846,72 +846,80 @@ function dotPositions(count, cx, cy) {
 function drawMarble(cx, cy, r, owner, pulse) {
   const isPlayer = owner === 'player';
 
-  // ── 1. soft drop shadow ──────────────────────────────────────────────────
-  const shadow = ctx.createRadialGradient(cx + 2, cy + 3, 0, cx + 2, cy + 3, r * 1.1);
-  shadow.addColorStop(0,   'rgba(0,0,0,0.38)');
-  shadow.addColorStop(1,   'rgba(0,0,0,0)');
-  ctx.fillStyle = shadow;
-  ctx.beginPath(); ctx.arc(cx + 2, cy + 3, r * 1.25, 0, Math.PI * 2); ctx.fill();
-
-  // ── 2. ambient coloured glow bleeding onto the tile ──────────────────────
+  // ── Coloured ambient glow + drop shadow onto the tile ────────────────────
   ctx.save();
-  ctx.shadowColor = isPlayer ? 'rgba(26,107,181,0.55)' : 'rgba(192,57,43,0.55)';
-  ctx.shadowBlur  = r * 1.6 + pulse * 4;
+  ctx.shadowColor   = isPlayer ? 'rgba(26,107,181,0.6)' : 'rgba(192,57,43,0.6)';
+  ctx.shadowBlur    = r * 2.2 + pulse * 5;
+  ctx.shadowOffsetX = 1.5;
+  ctx.shadowOffsetY = 2.5;
 
-  // ── 3. base sphere — radial gradient simulating depth ────────────────────
+  // Base sphere drawn here so the shadow bleeds onto the tile beneath it.
   const base = ctx.createRadialGradient(
-    cx - r * 0.28, cy - r * 0.3, r * 0.04,
-    cx + r * 0.1,  cy + r * 0.1, r
+    cx - r * 0.3, cy - r * 0.32, 0,
+    cx,           cy,             r
   );
   if (isPlayer) {
-    base.addColorStop(0,    'rgba(160,215,255,1)');
-    base.addColorStop(0.42, 'rgba(35,115,215,1)');
-    base.addColorStop(1,    'rgba(8,40,138,1)');
+    base.addColorStop(0,    '#d4eeff');
+    base.addColorStop(0.3,  '#3090e0');
+    base.addColorStop(0.72, '#0d4ec0');
+    base.addColorStop(1,    '#051878');
   } else {
-    base.addColorStop(0,    'rgba(255,148,120,1)');
-    base.addColorStop(0.42, 'rgba(210,42,32,1)');
-    base.addColorStop(1,    'rgba(95,8,8,1)');
+    base.addColorStop(0,    '#ffd0b8');
+    base.addColorStop(0.3,  '#e03828');
+    base.addColorStop(0.72, '#a01414');
+    base.addColorStop(1,    '#400808');
   }
   ctx.fillStyle = base;
-  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
   ctx.restore();
 
-  // ── 4. glass body — transparent centre fading to opaque white rim ────────
-  const glass = ctx.createRadialGradient(cx, cy, r * 0.3, cx, cy, r);
-  glass.addColorStop(0, 'rgba(255,255,255,0)');
-  glass.addColorStop(1, 'rgba(255,255,255,0.14)');
-  ctx.fillStyle = glass;
-  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+  // ── All highlight layers clipped to the marble circle ────────────────────
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.clip();
 
-  // ── 5. inner colour core (gives translucent glass depth) ─────────────────
-  const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 0.65);
-  core.addColorStop(0, isPlayer ? 'rgba(80,170,255,0.3)' : 'rgba(255,90,70,0.3)');
+  // Dark rim — reinforces the sphere silhouette
+  const rim = ctx.createRadialGradient(cx, cy, r * 0.52, cx, cy, r);
+  rim.addColorStop(0, 'rgba(0,0,0,0)');
+  rim.addColorStop(1, 'rgba(0,0,0,0.42)');
+  ctx.fillStyle = rim;
+  ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+
+  // Translucent colour pool at centre (glass depth)
+  const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 0.68);
+  core.addColorStop(0, isPlayer ? 'rgba(150,210,255,0.32)' : 'rgba(255,130,110,0.32)');
   core.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.fillStyle = core;
-  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+  ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
 
-  // ── 6. primary specular — bright oval upper-left ──────────────────────────
-  const hlx = cx - r * 0.3, hly = cy - r * 0.3;
-  const hl  = ctx.createRadialGradient(hlx, hly, 0, hlx, hly, r * 0.52);
-  hl.addColorStop(0,    'rgba(255,255,255,0.95)');
-  hl.addColorStop(0.32, 'rgba(255,255,255,0.5)');
+  // Primary specular — large bright oval, upper-left
+  const hlx = cx - r * 0.28, hly = cy - r * 0.32;
+  const hl  = ctx.createRadialGradient(hlx, hly, 0, hlx, hly, r * 0.62);
+  hl.addColorStop(0,    'rgba(255,255,255,1)');
+  hl.addColorStop(0.28, 'rgba(255,255,255,0.72)');
+  hl.addColorStop(0.65, 'rgba(255,255,255,0.18)');
   hl.addColorStop(1,    'rgba(255,255,255,0)');
   ctx.fillStyle = hl;
-  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+  ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
 
-  // ── 7. secondary specular — tiny hot-spot bottom-right ───────────────────
-  const hl2x = cx + r * 0.38, hl2y = cy + r * 0.35;
-  const hl2  = ctx.createRadialGradient(hl2x, hl2y, 0, hl2x, hl2y, r * 0.2);
-  hl2.addColorStop(0, 'rgba(255,255,255,0.32)');
+  // Secondary specular — small hot-spot, lower-right
+  const hl2x = cx + r * 0.3, hl2y = cy + r * 0.28;
+  const hl2  = ctx.createRadialGradient(hl2x, hl2y, 0, hl2x, hl2y, r * 0.3);
+  hl2.addColorStop(0, 'rgba(255,255,255,0.55)');
   hl2.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.fillStyle = hl2;
-  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
+  ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+
+  ctx.restore();
 }
 
 function drawDots(x, y, w, h, cell) {
   const phase  = (x * 0.31 + y * 0.19) * 0.05;
   const pulse  = 0.5 + 0.5 * Math.sin(renderTime * 0.002 + phase);
-  const radius = 7 + pulse * 1.1;
+  const radius = 9 + pulse * 1.2;   // larger than old dots so the 3D effect reads clearly
   for (const [mx, my] of dotPositions(Math.min(cell.energy, 4), x + w/2, y + h/2)) {
     drawMarble(mx, my, radius, cell.owner, pulse);
   }
