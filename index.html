@@ -857,118 +857,162 @@ function drawMarble(cx, cy, r, owner, pulse) {
   const isPlayer = owner === 'player';
   const isAI     = owner === 'ai';
 
-  // Per-owner color palette
-  let shadowRgb, coreRgb, base0, base1, base2, base3;
-  let causticBright, causticMid, fringe;
+  // ── Color palette ─────────────────────────────────────────────────────────
+  let glowRgb, shadowRgb, coreRgb;
+  let bodyLight, bodyMid, bodyDark, bodyEdge;
+  let causticA, causticB, fringeCol;
+
   if (isPlayer) {
-    base0 = '#d8eeff'; base1 = '#1a72e8'; base2 = '#0830a8'; base3 = '#030e52';
-    shadowRgb = '28,100,228';  coreRgb = '80,162,255';
-    causticBright = 'rgba(130,195,255,0.88)'; causticMid = 'rgba(130,195,255,0.32)';
-    fringe = 'rgba(18,75,210,0.52)';
+    glowRgb   = '40,120,255';   shadowRgb = '10,40,140';   coreRgb = '90,170,255';
+    bodyLight = '#9cd4ff';      bodyMid   = '#1460d8';
+    bodyDark  = '#062090';      bodyEdge  = '#010818';
+    causticA  = 'rgba(150,215,255,0.96)';  causticB = 'rgba(150,215,255,0)';
+    fringeCol = 'rgba(30,90,235,0.58)';
   } else if (isAI) {
-    base0 = '#ffc8b0'; base1 = '#e01808'; base2 = '#8c0808'; base3 = '#280000';
-    shadowRgb = '200,28,12';   coreRgb = '255,82,52';
-    causticBright = 'rgba(255,155,105,0.86)'; causticMid = 'rgba(255,155,105,0.30)';
-    fringe = 'rgba(168,8,4,0.52)';
+    glowRgb   = '225,40,18';    shadowRgb = '100,8,4';     coreRgb = '255,90,58';
+    bodyLight = '#ffb898';      bodyMid   = '#d81205';
+    bodyDark  = '#780300';      bodyEdge  = '#140000';
+    causticA  = 'rgba(255,165,115,0.96)';  causticB = 'rgba(255,165,115,0)';
+    fringeCol = 'rgba(195,18,6,0.58)';
   } else {
-    // Neutral — silver glass
-    base0 = '#f8faff'; base1 = '#b8c2d4'; base2 = '#6878a0'; base3 = '#2c3448';
-    shadowRgb = '140,155,185'; coreRgb = '200,212,235';
-    causticBright = 'rgba(238,244,255,0.90)'; causticMid = 'rgba(238,244,255,0.32)';
-    fringe = 'rgba(88,108,145,0.42)';
+    glowRgb   = '155,168,198';  shadowRgb = '55,65,95';    coreRgb = '195,208,232';
+    bodyLight = '#dce6f6';      bodyMid   = '#7285ae';
+    bodyDark  = '#32395a';      bodyEdge  = '#0a0c16';
+    causticA  = 'rgba(228,235,252,0.96)';  causticB = 'rgba(228,235,252,0)';
+    fringeCol = 'rgba(88,108,155,0.50)';
   }
 
-  // ── Base sphere: offset radial gradient (light from upper-left) ──────────
-  ctx.save();
-  ctx.shadowColor   = `rgba(${shadowRgb},0.68)`;
-  ctx.shadowBlur    = r * 2.2 + pulse * 5;
-  ctx.shadowOffsetX = r * 0.12;
-  ctx.shadowOffsetY = r * 0.24;
+  const R2 = r * 2;
 
+  // ── Pass 1: Ambient glow painted directly onto tile ───────────────────────
+  // shadowBlur is invisible on light marble tile — explicit gradient ring is
+  // the only way to get a visible colored halo on a pale background.
+  const glowR = r * 2.0 + pulse * 2.8;
+  const glowG = ctx.createRadialGradient(cx, cy, r * 0.55, cx, cy, glowR);
+  glowG.addColorStop(0,    `rgba(${glowRgb},0.32)`);
+  glowG.addColorStop(0.38, `rgba(${glowRgb},0.14)`);
+  glowG.addColorStop(0.72, `rgba(${glowRgb},0.04)`);
+  glowG.addColorStop(1,    `rgba(${glowRgb},0)`);
+  ctx.fillStyle = glowG;
+  ctx.beginPath();
+  ctx.arc(cx, cy, glowR, 0, Math.PI * 2);
+  ctx.fill();
+
+  // ── Pass 2: Drop shadow offset below-right ────────────────────────────────
+  const shx = cx + r * 0.22, shy = cy + r * 0.28;
+  const shG = ctx.createRadialGradient(shx, shy, 0, shx, shy, r * 1.05);
+  shG.addColorStop(0,    `rgba(${shadowRgb},0.52)`);
+  shG.addColorStop(0.42, `rgba(${shadowRgb},0.22)`);
+  shG.addColorStop(1,    `rgba(${shadowRgb},0)`);
+  ctx.fillStyle = shG;
+  ctx.beginPath();
+  ctx.arc(shx, shy, r * 1.05, 0, Math.PI * 2);
+  ctx.fill();
+
+  // ── Pass 3: Base sphere body ──────────────────────────────────────────────
+  // Extreme light-to-dark gradient: highlight displaced to upper-left,
+  // darkest point at lower-right edge — maximum contrast for glass read.
   const base = ctx.createRadialGradient(
-    cx - r * 0.27, cy - r * 0.30, r * 0.01,
-    cx + r * 0.05, cy + r * 0.07, r
+    cx - r * 0.30, cy - r * 0.33, 0,
+    cx + r * 0.14, cy + r * 0.16, r
   );
-  base.addColorStop(0,    base0);
-  base.addColorStop(0.18, base1);
-  base.addColorStop(0.60, base2);
-  base.addColorStop(1,    base3);
+  base.addColorStop(0,    bodyLight);
+  base.addColorStop(0.20, bodyMid);
+  base.addColorStop(0.58, bodyDark);
+  base.addColorStop(1,    bodyEdge);
   ctx.fillStyle = base;
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.fill();
-  ctx.restore();
 
-  // ── Clipped detail layers (all confined to marble circle) ────────────────
+  // ── Pass 4: Clipped detail layers ────────────────────────────────────────
   ctx.save();
   ctx.beginPath();
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.clip();
 
-  // Layer 1 — depth rim: darkens edge to give sphere its 3D form
-  const rim = ctx.createRadialGradient(cx, cy, r * 0.40, cx, cy, r);
-  rim.addColorStop(0,    'rgba(0,0,0,0)');
-  rim.addColorStop(0.65, 'rgba(0,0,0,0.10)');
-  rim.addColorStop(1,    'rgba(0,0,0,0.60)');
-  ctx.fillStyle = rim;
-  ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+  // 4a — Strong rim occlusion: pushes edge to near-black for vivid sphere pop
+  const rimG = ctx.createRadialGradient(cx, cy, r * 0.28, cx, cy, r);
+  rimG.addColorStop(0,    'rgba(0,0,0,0)');
+  rimG.addColorStop(0.52, 'rgba(0,0,0,0.06)');
+  rimG.addColorStop(0.78, 'rgba(0,0,0,0.32)');
+  rimG.addColorStop(1,    'rgba(0,0,0,0.80)');
+  ctx.fillStyle = rimG;
+  ctx.fillRect(cx - r, cy - r, R2, R2);
 
-  // Layer 2 — inner colour glow: makes glass feel semi-transparent
-  const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 0.70);
-  core.addColorStop(0,   `rgba(${coreRgb},0.24)`);
-  core.addColorStop(0.55, `rgba(${coreRgb},0.08)`);
-  core.addColorStop(1,   `rgba(${coreRgb},0)`);
-  ctx.fillStyle = core;
-  ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+  // 4b — Inner colour glow: glass transparency illusion
+  const coreG = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 0.72);
+  coreG.addColorStop(0,    `rgba(${coreRgb},0.32)`);
+  coreG.addColorStop(0.48, `rgba(${coreRgb},0.12)`);
+  coreG.addColorStop(1,    `rgba(${coreRgb},0)`);
+  ctx.fillStyle = coreG;
+  ctx.fillRect(cx - r, cy - r, R2, R2);
 
-  // Layer 3 — caustic: refracted light concentrates at lower-center
-  // (the defining optical feature of a real glass sphere)
-  const cx2 = cx + r * 0.06, cy2 = cy + r * 0.40;
-  const caustic = ctx.createRadialGradient(cx2, cy2, 0, cx2, cy2, r * 0.44);
-  caustic.addColorStop(0,   causticBright);
-  caustic.addColorStop(0.4, causticMid);
-  caustic.addColorStop(1,   'rgba(255,255,255,0)');
-  ctx.globalAlpha = 0.60 + pulse * 0.14;
-  ctx.fillStyle = caustic;
-  ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+  // 4c — Caustic: refracted light pool at lower-center (real glass optic)
+  const cax = cx + r * 0.04, cay = cy + r * 0.43;
+  const cauG = ctx.createRadialGradient(cax, cay, 0, cax, cay, r * 0.42);
+  cauG.addColorStop(0,    causticA);
+  cauG.addColorStop(0.42, causticB);
+  cauG.addColorStop(1,    causticB);
+  ctx.globalAlpha = 0.55 + pulse * 0.18;
+  ctx.fillStyle   = cauG;
+  ctx.fillRect(cx - r, cy - r, R2, R2);
   ctx.globalAlpha = 1;
 
-  // Layer 4 — coloured fringe glow at rim (energy / fantasy feel)
-  const fringeG = ctx.createRadialGradient(cx, cy, r * 0.68, cx, cy, r);
-  fringeG.addColorStop(0, 'rgba(0,0,0,0)');
-  fringeG.addColorStop(1, fringe);
-  ctx.fillStyle = fringeG;
-  ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+  // 4d — Coloured fringe at rim (energy / fantasy feel)
+  const friG = ctx.createRadialGradient(cx, cy, r * 0.60, cx, cy, r);
+  friG.addColorStop(0, 'rgba(0,0,0,0)');
+  friG.addColorStop(1, fringeCol);
+  ctx.fillStyle = friG;
+  ctx.fillRect(cx - r, cy - r, R2, R2);
 
-  // Layer 5 — primary specular: large soft oval, upper-left
-  const sp1x = cx - r * 0.24, sp1y = cy - r * 0.28;
-  const spec1 = ctx.createRadialGradient(sp1x, sp1y, 0, sp1x, sp1y, r * 0.56);
-  spec1.addColorStop(0,    'rgba(255,255,255,0.97)');
-  spec1.addColorStop(0.18, 'rgba(255,255,255,0.80)');
-  spec1.addColorStop(0.52, 'rgba(255,255,255,0.18)');
-  spec1.addColorStop(1,    'rgba(255,255,255,0)');
-  ctx.fillStyle = spec1;
-  ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+  // 4e — PRIMARY SPECULAR: wide bright lobe, upper-left
+  // r*0.65 radius means it covers most of the lit hemisphere — premium glass look
+  const ps1x = cx - r * 0.18, ps1y = cy - r * 0.22;
+  const ps1  = ctx.createRadialGradient(ps1x, ps1y, 0, ps1x, ps1y, r * 0.65);
+  ps1.addColorStop(0,    'rgba(255,255,255,0.96)');
+  ps1.addColorStop(0.12, 'rgba(255,255,255,0.92)');
+  ps1.addColorStop(0.32, 'rgba(255,255,255,0.55)');
+  ps1.addColorStop(0.60, 'rgba(255,255,255,0.14)');
+  ps1.addColorStop(1,    'rgba(255,255,255,0)');
+  ctx.fillStyle = ps1;
+  ctx.fillRect(cx - r, cy - r, R2, R2);
 
-  // Layer 6 — secondary specular: tiny sharp hot-spot (glass hardness)
-  const sp2x = cx - r * 0.44, sp2y = cy - r * 0.46;
-  const spec2 = ctx.createRadialGradient(sp2x, sp2y, 0, sp2x, sp2y, r * 0.14);
-  spec2.addColorStop(0,   'rgba(255,255,255,1)');
-  spec2.addColorStop(0.45, 'rgba(255,255,255,0.55)');
-  spec2.addColorStop(1,   'rgba(255,255,255,0)');
-  ctx.fillStyle = spec2;
-  ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+  // 4f — SECONDARY SPECULAR: small sharp glint top-left (glass hardness)
+  const ps2x = cx - r * 0.46, ps2y = cy - r * 0.48;
+  const ps2  = ctx.createRadialGradient(ps2x, ps2y, 0, ps2x, ps2y, r * 0.17);
+  ps2.addColorStop(0,    'rgba(255,255,255,1)');
+  ps2.addColorStop(0.30, 'rgba(255,255,255,0.72)');
+  ps2.addColorStop(1,    'rgba(255,255,255,0)');
+  ctx.fillStyle = ps2;
+  ctx.fillRect(cx - r, cy - r, R2, R2);
+
+  // 4g — Crescent rim light: thin bright arc along upper-left silhouette edge
+  const crG = ctx.createRadialGradient(cx, cy, r * 0.78, cx, cy, r * 0.98);
+  crG.addColorStop(0,    'rgba(255,255,255,0)');
+  crG.addColorStop(0.62, 'rgba(255,255,255,0.22)');
+  crG.addColorStop(1,    'rgba(255,255,255,0.06)');
+  ctx.fillStyle = crG;
+  ctx.fillRect(cx - r, cy - r, R2, R2);
+  // Mask out the lower-right portion of that crescent so it reads as upper arc
+  const crMask = ctx.createRadialGradient(
+    cx + r * 0.35, cy + r * 0.35, 0,
+    cx + r * 0.35, cy + r * 0.35, r * 1.05
+  );
+  crMask.addColorStop(0,    'rgba(0,0,0,0.28)');
+  crMask.addColorStop(0.50, 'rgba(0,0,0,0)');
+  crMask.addColorStop(1,    'rgba(0,0,0,0)');
+  ctx.fillStyle = crMask;
+  ctx.fillRect(cx - r, cy - r, R2, R2);
 
   ctx.restore();
 
-  // ── Silhouette stroke: sharpens marble edge against tile surface ──────────
-  ctx.save();
-  ctx.strokeStyle = 'rgba(0,0,0,0.28)';
+  // ── Pass 5: Silhouette stroke — crisp edge against marble tile ────────────
+  ctx.strokeStyle = 'rgba(0,0,0,0.30)';
   ctx.lineWidth   = 0.8;
   ctx.beginPath();
   ctx.arc(cx, cy, r - 0.4, 0, Math.PI * 2);
   ctx.stroke();
-  ctx.restore();
 }
 
 function drawDots(x, y, w, h, cell) {
