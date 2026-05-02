@@ -179,8 +179,17 @@ canvas { display: block; cursor: pointer; }
   color: #485868;
   text-align: center;
   letter-spacing: 0.02em;
+  transition: color 0.4s;
 }
 #goal-display.done { color: #6aaca8; }
+#goal-display.near {
+  color: #c8a84a;
+  animation: goal-pulse 1.4s ease-in-out infinite;
+}
+@keyframes goal-pulse {
+  0%, 100% { text-shadow: none; }
+  50%       { text-shadow: 0 0 8px rgba(210,170,60,0.55), 0 0 18px rgba(210,170,60,0.2); }
+}
 #modifier-display {
   font-size: 0.74rem;
   text-align: center;
@@ -1195,7 +1204,12 @@ function updateGoalDisplay() {
   const suffix = g.done ? '  [complete! +50 coins]' : '';
   const el = document.getElementById('goal-display');
   el.textContent = `Goal: ${g.label}  —  ${progress}${suffix}`;
-  el.className   = g.done ? 'done' : '';
+  let current = 0;
+  if (g.type === 'score')  current = state.score;
+  if (g.type === 'chains') current = state.chains;
+  if (g.type === 'moves')  current = state.playerMoves;
+  const ratio = current / g.target;
+  el.className = g.done ? 'done' : (ratio >= 0.8 ? 'near' : '');
 }
 
 function updateModifierDisplay() {
