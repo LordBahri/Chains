@@ -282,6 +282,7 @@ let effects    = [];  // expanding ring objects
 let particles  = [];  // energy orbs flying between cells
 let flashes    = [];  // brief cell-fill overlays on explosion
 let bursts     = [];  // center bloom on explosion
+let lightnings = [];  // arc bolts connecting chain cells
 let pops       = [];  // quick ring on energy placement
 let floatTexts = [];  // score labels that float upward
 let cellTr    = makeTrGrid();  // per-cell color transition state
@@ -313,6 +314,9 @@ function spawnExplosion(r, c, owner, depth = 0) {
 
   // Cell overlay flash
   flashes.push({ r, c, color, rgb, born: now, life: 200 + d * 12, depth: d });
+
+  // Lightning arcs to neighbours
+  spawnLightning(r, c, owner, d);
 }
 
 // ─── Audio ────────────────────────────────────────────────────────────────────
@@ -1190,6 +1194,84 @@ function drawEffects(timestamp) {
   });
 }
 
+// ─── Lightning ────────────────────────────────────────────────────────────────
+
+// Midpoint-displacement bolt: returns flat [x0,y0, x1,y1, ...] array.
+function genBolt(ax, ay, bx, by, levels = 3) {
+  let pts = [[ax, ay], [bx, by]];
+  for (let lvl = 0; lvl < levels; lvl++) {
+    const next = [];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const [x1, y1] = pts[i], [x2, y2] = pts[i + 1];
+      const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+      const dx = x2 - x1, dy = y2 - y1;
+      const len = Math.sqrt(dx * dx + dy * dy) || 1;
+      const disp = (Math.random() - 0.5) * len * 0.42;
+      next.push(pts[i], [mx - dy / len * disp, my + dx / len * disp]);
+    }
+    next.push(pts[pts.length - 1]);
+    pts = next;
+  }
+  return pts.flat();
+}
+
+// Spawn lightning arcs from exploding cell to each visible neighbour.
+function spawnLightning(r, c, owner, depth) {
+  const [x, y, w, h] = cellRect(r, c);
+  const cx = x + w / 2, cy = y + h / 2;
+  const rgb  = owner === 'player' ? '80,160,255' : '255,80,60';
+  const now  = performance.now();
+  const d    = Math.min(depth, 6);
+  const life = 180 + d * 18;
+
+  for (const [nr, nc] of neighbors(r, c)) {
+    const [nx, ny, nw, nh] = cellRect(nr, nc);
+    const ncx = nx + nw / 2, ncy = ny + nh / 2;
+    // Pre-bake 4 flicker frames to avoid per-frame allocation
+    const frames = Array.from({ length: 4 }, () => genBolt(cx, cy, ncx, ncy, 3));
+    lightnings.push({ cx, cy, ncx, ncy, rgb, born: now, life, depth: d, frames });
+  }
+}
+
+function drawLightning(timestamp) {
+  lightnings = lightnings.filter(l => {
+    const t = (timestamp - l.born) / l.life;
+    if (t >= 1) return false;
+    const fade   = 1 - t;
+    const d      = l.depth;
+    const frame  = l.frames[Math.floor(timestamp / 38) % l.frames.length];
+    const bright = 0.75 + d * 0.04;
+
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // Outer glow stroke
+    ctx.globalAlpha = fade * bright;
+    ctx.strokeStyle = `rgba(${l.rgb},1)`;
+    ctx.lineWidth   = 2.5 + d * 0.3;
+    ctx.shadowColor = `rgba(${l.rgb},0.9)`;
+    ctx.shadowBlur  = 10 + d * 2;
+    ctx.beginPath();
+    ctx.moveTo(frame[0], frame[1]);
+    for (let i = 2; i < frame.length; i += 2) ctx.lineTo(frame[i], frame[i + 1]);
+    ctx.stroke();
+
+    // Bright white-blue core
+    ctx.globalAlpha = fade * bright * 0.85;
+    ctx.strokeStyle = 'rgba(200,230,255,0.95)';
+    ctx.lineWidth   = 0.9;
+    ctx.shadowBlur  = 0;
+    ctx.beginPath();
+    ctx.moveTo(frame[0], frame[1]);
+    for (let i = 2; i < frame.length; i += 2) ctx.lineTo(frame[i], frame[i + 1]);
+    ctx.stroke();
+
+    ctx.restore();
+    return true;
+  });
+}
+
 // ─── Render Loop ──────────────────────────────────────────────────────────────
 
 function renderLoop(timestamp) {
@@ -1219,6 +1301,7 @@ function renderLoop(timestamp) {
     drawBursts(timestamp);
     drawParticles(timestamp);
     drawEffects(timestamp);
+    drawLightning(timestamp);
     drawPops(timestamp);
     drawFloatTexts(timestamp);
 
@@ -1457,6 +1540,7 @@ function restart() {
   particles  = [];
   flashes    = [];
   bursts     = [];
+  lightnings = [];
   pops       = [];
   floatTexts = [];
   cellTr     = makeTrGrid();
