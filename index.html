@@ -1219,17 +1219,15 @@ function genBolt(ax, ay, bx, by, levels = 3) {
 function spawnLightning(r, c, owner, depth) {
   const [x, y, w, h] = cellRect(r, c);
   const cx = x + w / 2, cy = y + h / 2;
-  const rgb  = owner === 'player' ? '80,160,255' : '255,80,60';
+  const rgb  = owner === 'player' ? '20,120,255' : '255,40,20';
   const now  = performance.now();
   const d    = Math.min(depth, 6);
-  const life = 180 + d * 18;
 
   for (const [nr, nc] of neighbors(r, c)) {
     const [nx, ny, nw, nh] = cellRect(nr, nc);
     const ncx = nx + nw / 2, ncy = ny + nh / 2;
-    // Pre-bake 4 flicker frames to avoid per-frame allocation
-    const frames = Array.from({ length: 4 }, () => genBolt(cx, cy, ncx, ncy, 3));
-    lightnings.push({ cx, cy, ncx, ncy, rgb, born: now, life, depth: d, frames });
+    const frames = Array.from({ length: 5 }, () => genBolt(cx, cy, ncx, ncy, 3));
+    lightnings.push({ rgb, born: now, life: 480 + d * 20, depth: d, frames });
   }
 }
 
@@ -1237,31 +1235,36 @@ function drawLightning(timestamp) {
   lightnings = lightnings.filter(l => {
     const t = (timestamp - l.born) / l.life;
     if (t >= 1) return false;
-    const fade   = 1 - t;
-    const d      = l.depth;
-    const frame  = l.frames[Math.floor(timestamp / 38) % l.frames.length];
-    const bright = 0.75 + d * 0.04;
+    const fade  = 1 - t;
+    const d     = l.depth;
+    const frame = l.frames[Math.floor(timestamp / 35) % l.frames.length];
 
     ctx.save();
-    ctx.lineCap = 'round';
+    ctx.lineCap  = 'round';
     ctx.lineJoin = 'round';
 
-    // Outer glow stroke
-    ctx.globalAlpha = fade * bright;
-    ctx.strokeStyle = `rgba(${l.rgb},1)`;
-    ctx.lineWidth   = 2.5 + d * 0.3;
-    ctx.shadowColor = `rgba(${l.rgb},0.9)`;
-    ctx.shadowBlur  = 10 + d * 2;
+    // Layer 1 — wide soft halo (no shadowBlur needed, just wide semi-transparent)
+    ctx.globalAlpha = fade * (0.18 + d * 0.02);
+    ctx.strokeStyle = `rgb(${l.rgb})`;
+    ctx.lineWidth   = 16;
     ctx.beginPath();
     ctx.moveTo(frame[0], frame[1]);
     for (let i = 2; i < frame.length; i += 2) ctx.lineTo(frame[i], frame[i + 1]);
     ctx.stroke();
 
-    // Bright white-blue core
-    ctx.globalAlpha = fade * bright * 0.85;
-    ctx.strokeStyle = 'rgba(200,230,255,0.95)';
-    ctx.lineWidth   = 0.9;
-    ctx.shadowBlur  = 0;
+    // Layer 2 — medium coloured core
+    ctx.globalAlpha = fade * (0.85 + d * 0.02);
+    ctx.strokeStyle = `rgb(${l.rgb})`;
+    ctx.lineWidth   = 3.5;
+    ctx.beginPath();
+    ctx.moveTo(frame[0], frame[1]);
+    for (let i = 2; i < frame.length; i += 2) ctx.lineTo(frame[i], frame[i + 1]);
+    ctx.stroke();
+
+    // Layer 3 — thin bright white centre
+    ctx.globalAlpha = fade * 0.95;
+    ctx.strokeStyle = 'rgb(230,245,255)';
+    ctx.lineWidth   = 1;
     ctx.beginPath();
     ctx.moveTo(frame[0], frame[1]);
     for (let i = 2; i < frame.length; i += 2) ctx.lineTo(frame[i], frame[i + 1]);
