@@ -181,6 +181,14 @@ canvas { display: block; cursor: pointer; }
   letter-spacing: 0.02em;
 }
 #goal-display.done { color: #6aaca8; }
+#modifier-display {
+  font-size: 0.74rem;
+  text-align: center;
+  letter-spacing: 0.02em;
+  padding: 3px 0 1px;
+}
+#modifier-display .mod-label { font-weight: 700; color: #e0a84a; }
+#modifier-display .mod-none  { color: #363650; }
 </style>
 </head>
 <body>
@@ -199,6 +207,7 @@ canvas { display: block; cursor: pointer; }
 </div>
 
 <div id="goal-display">Goal: —</div>
+<div id="modifier-display"></div>
 
 <div id="canvas-wrap">
   <canvas id="canvas"></canvas>
@@ -554,7 +563,23 @@ const BOARD_LAYOUTS = {
 
 const LAYOUT_NAMES = Object.keys(BOARD_LAYOUTS);
 
-function genBlockedCells(hiddenSet) {
+// ─── Run Modifiers ────────────────────────────────────────────────────────────
+
+const MODIFIERS = [
+  { id: 'none',           label: null,            desc: null                              },
+  { id: 'none',           label: null,            desc: null                              }, // extra weight for no-modifier
+  { id: 'stronger_ai',    label: 'Stronger AI',   desc: 'AI starts with 2 cells already placed' },
+  { id: 'extra_blocked',  label: 'Rubble Field',  desc: '+4 extra blocked cells'          },
+  { id: 'critical_surge', label: 'Critical Mass', desc: 'Critical cells spawn twice as often' },
+  { id: 'shield_maze',    label: 'Shield Maze',   desc: 'Shields spawn twice as often'   },
+  { id: 'speed_run',      label: 'Speed Run',     desc: 'Win within 8 turns or AI wins'  },
+];
+
+function genModifier() {
+  return MODIFIERS[Math.floor(Math.random() * MODIFIERS.length)];
+}
+
+function genBlockedCells(hiddenSet, pairCount = 2) {
   const candidates = [];
   for (let r = 1; r <= GRID - 2; r++)
     for (let c = 1; c <= GRID - 2; c++)
@@ -567,7 +592,7 @@ function genBlockedCells(hiddenSet) {
   const blocked = new Set();
   let count = 0;
   for (const [r, c] of candidates) {
-    if (count >= 2) break;
+    if (count >= pairCount) break;
     const key = `${r},${c}`, mkey = `${GRID-1-r},${GRID-1-c}`;
     if (!blocked.has(key) && !blocked.has(mkey)) {
       blocked.add(key); blocked.add(mkey); count++;
@@ -577,20 +602,41 @@ function genBlockedCells(hiddenSet) {
 }
 
 function newState() {
+  const modifier   = genModifier();
   const layoutName = LAYOUT_NAMES[Math.floor(Math.random() * LAYOUT_NAMES.length)];
   const hiddenSet  = BOARD_LAYOUTS[layoutName]();
-  const blockedSet = genBlockedCells(hiddenSet);
+  const blockPairs = modifier.id === 'extra_blocked' ? 4 : 2;
+  const blockedSet = genBlockedCells(hiddenSet, blockPairs);
+  const shieldRate   = modifier.id === 'shield_maze'    ? 0.28 : 0.12;
+  const criticalRate = modifier.id === 'critical_surge' ? 0.18 : 0.08;
+
+  const grid = Array.from({ length: GRID }, (_, r) =>
+    Array.from({ length: GRID }, (_, c) => {
+      const hidden  = hiddenSet.has(`${r},${c}`);
+      const blocked = !hidden && blockedSet.has(`${r},${c}`);
+      return { owner: null, energy: 0,
+        shield:   !hidden && !blocked && Math.random() < shieldRate,
+        critical: !hidden && !blocked && Math.random() < criticalRate,
+        hidden, blocked };
+    }));
+
+  // stronger_ai: seed 2 AI cells in the bottom-right quadrant
+  if (modifier.id === 'stronger_ai') {
+    const aiPool = [];
+    for (let r = Math.floor(GRID / 2); r < GRID; r++)
+      for (let c = Math.floor(GRID / 2); c < GRID; c++)
+        if (!grid[r][c].hidden && !grid[r][c].blocked) aiPool.push([r, c]);
+    for (let i = aiPool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [aiPool[i], aiPool[j]] = [aiPool[j], aiPool[i]];
+    }
+    aiPool.slice(0, 2).forEach(([r, c]) => { grid[r][c].owner = 'ai'; grid[r][c].energy = 2; });
+  }
+
   return {
+    modifier,
     layout:     layoutName,
-    grid:       Array.from({ length: GRID }, (_, r) =>
-                  Array.from({ length: GRID }, (_, c) => {
-                    const hidden  = hiddenSet.has(`${r},${c}`);
-                    const blocked = !hidden && blockedSet.has(`${r},${c}`);
-                    return { owner: null, energy: 0,
-                      shield:   !hidden && !blocked && Math.random() < 0.12,
-                      critical: !hidden && !blocked && Math.random() < 0.08,
-                      hidden, blocked };
-                  })),
+    grid,
     turn:       'player',
     phase:      'input',  // 'input' | 'animating' | 'over'
     winner:     null,
@@ -1060,6 +1106,11 @@ async function doPlayerMove(r, c) {
     if (gameId !== id) return;
     if (w1) { endGame(w1); return; }
 
+    // speed_run: player must win within 8 turns
+    if (state.modifier.id === 'speed_run' && state.playerMoves >= 8) {
+      endGame('ai'); return;
+    }
+
     // ── handoff to AI ────────────────────────────────────────────────────
     state.turn = 'ai';
     updateUI();
@@ -1115,6 +1166,19 @@ function updateGoalDisplay() {
   el.className   = g.done ? 'done' : '';
 }
 
+function updateModifierDisplay() {
+  const el = document.getElementById('modifier-display');
+  const m  = state.modifier;
+  if (!m.label) {
+    el.innerHTML = '<span class="mod-none">No modifier</span>';
+  } else {
+    const turns = m.id === 'speed_run'
+      ? `  (${Math.max(0, 8 - state.playerMoves)} turns left)` : '';
+    el.innerHTML = `Modifier: <span class="mod-label">${m.label}</span>`
+                 + ` — ${m.desc}${turns}`;
+  }
+}
+
 function updateScoreDisplay() {
   document.getElementById('score-val').textContent  = state.score;
   document.getElementById('mult-val').textContent   = state.multiplier;
@@ -1122,6 +1186,7 @@ function updateScoreDisplay() {
   document.getElementById('mult-wrap').className    = state.multiplier > 1 ? 'active' : '';
   checkGoalCompletion();
   updateGoalDisplay();
+  updateModifierDisplay();
   refreshUpgradeBtn();
 }
 
@@ -1177,6 +1242,7 @@ function restart() {
   updateUI();
   updateScoreDisplay();
   updateGoalDisplay();
+  updateModifierDisplay();
 }
 
 // ─── Input ────────────────────────────────────────────────────────────────────
@@ -1223,6 +1289,7 @@ function bindInput() {
 state = newState();
 updateUI();
 updateScoreDisplay();
+updateModifierDisplay();
 bindInput();
 requestAnimationFrame(renderLoop);
 </script>
