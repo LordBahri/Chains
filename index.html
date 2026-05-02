@@ -8,8 +8,8 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  background: linear-gradient(160deg, #07071a 0%, #0d0d24 50%, #07071a 100%);
-  color: #e0e0ff;
+  background: linear-gradient(160deg, #16100a 0%, #211808 50%, #16100a 100%);
+  color: #d8cdb4;
   font-family: 'Segoe UI', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   min-height: 100vh;
@@ -28,42 +28,42 @@ body {
   align-items: center;
   padding: 0 24px;
   height: 48px;
-  background: rgba(8, 8, 24, 0.95);
-  border-bottom: 1px solid rgba(255,255,255,0.07);
-  box-shadow: 0 2px 16px rgba(0,0,0,0.6);
+  background: rgba(16,11,5,0.97);
+  border-bottom: 1px solid rgba(201,164,53,0.22);
+  box-shadow: 0 2px 16px rgba(0,0,0,0.7);
   z-index: 10;
 }
 .tb-side {
   flex: 1;
   font-size: 0.8rem;
   font-weight: 600;
-  color: #505070;
+  color: #7a6848;
   letter-spacing: 0.04em;
 }
-.tb-side span { color: #c8c8f0; margin-left: 5px; }
+.tb-side span { color: #d8cdb4; margin-left: 5px; }
 .tb-side:last-child { text-align: right; }
-.tb-side:last-child span { color: #ffc107; }
+.tb-side:last-child span { color: #e8c84a; }
 #mult-wrap {
   font-size: 0.88rem;
   font-weight: 700;
-  color: #303050;
+  color: #50402a;
   padding: 3px 14px;
   border-radius: 14px;
   border: 1px solid transparent;
   transition: color 0.15s, background 0.15s, border-color 0.15s;
 }
 #mult-wrap.active {
-  color: #ffd54f;
-  background: rgba(255,213,79,0.1);
-  border-color: rgba(255,213,79,0.28);
-  box-shadow: 0 0 8px rgba(255,213,79,0.15);
+  color: #e8c84a;
+  background: rgba(232,200,74,0.1);
+  border-color: rgba(232,200,74,0.32);
+  box-shadow: 0 0 8px rgba(232,200,74,0.18);
 }
 
 h1 {
   font-size: 1rem;
   font-weight: 700;
   letter-spacing: 0.16em;
-  color: #383858;
+  color: #c9a43580;
   text-transform: uppercase;
 }
 
@@ -83,16 +83,16 @@ h1 {
   transition: background 0.25s, border-color 0.25s, color 0.25s, box-shadow 0.25s;
 }
 #turn-indicator.player {
-  background: rgba(79,195,247,0.1);
-  border: 1px solid rgba(79,195,247,0.5);
-  color: #4fc3f7;
-  box-shadow: 0 0 12px rgba(79,195,247,0.12);
+  background: rgba(21,101,192,0.12);
+  border: 1px solid rgba(21,101,192,0.45);
+  color: #5b9bd5;
+  box-shadow: 0 0 12px rgba(21,101,192,0.1);
 }
 #turn-indicator.ai {
-  background: rgba(239,83,80,0.1);
-  border: 1px solid rgba(239,83,80,0.5);
-  color: #ef5350;
-  box-shadow: 0 0 12px rgba(239,83,80,0.12);
+  background: rgba(192,57,43,0.12);
+  border: 1px solid rgba(192,57,43,0.45);
+  color: #d46a5a;
+  box-shadow: 0 0 12px rgba(192,57,43,0.1);
 }
 #turn-indicator.win {
   background: rgba(102,187,106,0.12);
@@ -101,16 +101,16 @@ h1 {
   box-shadow: 0 0 12px rgba(102,187,106,0.15);
 }
 #turn-indicator.lose {
-  background: rgba(239,83,80,0.12);
-  border: 1px solid rgba(239,83,80,0.5);
-  color: #ef5350;
-  box-shadow: 0 0 12px rgba(239,83,80,0.12);
+  background: rgba(192,57,43,0.12);
+  border: 1px solid rgba(192,57,43,0.45);
+  color: #d46a5a;
+  box-shadow: 0 0 12px rgba(192,57,43,0.1);
 }
 
 button {
   background: transparent;
-  border: 1px solid #2e2e4e;
-  color: #7080b0;
+  border: 1px solid rgba(201,164,53,0.28);
+  color: #9a8050;
   padding: 7px 20px;
   border-radius: 20px;
   cursor: pointer;
@@ -118,17 +118,20 @@ button {
   font-weight: 600;
   transition: background 0.18s, border-color 0.18s, color 0.18s;
 }
-button:hover { background: rgba(160,170,255,0.1); border-color: #6070a0; color: #a0aaff; }
+button:hover { background: rgba(201,164,53,0.1); border-color: rgba(201,164,53,0.55); color: #c9a435; }
 button:disabled { opacity: 0.35; cursor: default; }
-button:disabled:hover { background: transparent; border-color: #2e2e4e; color: #7080b0; }
+button:disabled:hover { background: transparent; border-color: rgba(201,164,53,0.28); color: #9a8050; }
 
 canvas { display: block; cursor: pointer; }
 
 #canvas-wrap {
   position: relative;
-  border-radius: 4px;
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.05),
-              0 8px 32px rgba(0,0,0,0.55);
+  border-radius: 6px;
+  border: 2px solid #c9a435;
+  box-shadow: 0 0 0 1px rgba(201,164,53,0.12),
+              0 8px 40px rgba(0,0,0,0.75),
+              0 0 60px rgba(201,164,53,0.08),
+              inset 0 0 30px rgba(201,164,53,0.04);
 }
 
 #overlay {
@@ -139,7 +142,7 @@ canvas { display: block; cursor: pointer; }
   align-items: center;
   justify-content: center;
   gap: 16px;
-  background: rgba(6,6,18,0.84);
+  background: rgba(20,14,6,0.88);
   backdrop-filter: blur(2px);
 }
 #overlay.hidden { display: none; }
@@ -149,13 +152,13 @@ canvas { display: block; cursor: pointer; }
   letter-spacing: 0.05em;
 }
 #overlay-title.win  { color: #66bb6a; text-shadow: 0 0 20px rgba(102,187,106,0.4); }
-#overlay-title.lose { color: #ef5350; text-shadow: 0 0 20px rgba(239,83,80,0.35); }
+#overlay-title.lose { color: #c0392b; text-shadow: 0 0 20px rgba(192,57,43,0.35); }
 
 #legend {
   display: flex;
   gap: 18px;
   font-size: 0.74rem;
-  color: #3a3a5a;
+  color: #6a5838;
 }
 .leg { display: flex; align-items: center; gap: 5px; }
 .leg-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
@@ -166,17 +169,17 @@ canvas { display: block; cursor: pointer; }
   gap: 12px;
   font-size: 0.78rem;
   padding: 7px 16px;
-  border: 1px solid rgba(255,255,255,0.06);
+  border: 1px solid rgba(201,164,53,0.18);
   border-radius: 12px;
-  color: #505070;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+  color: #7a6848;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.35);
 }
-#upgrade-row strong { color: #8890b8; }
+#upgrade-row strong { color: #b09060; }
 #upgrade-row button { padding: 4px 12px; font-size: 0.75rem; }
 
 #goal-display {
   font-size: 0.74rem;
-  color: #485868;
+  color: #7a6848;
   text-align: center;
   letter-spacing: 0.02em;
   transition: color 0.4s;
@@ -196,8 +199,8 @@ canvas { display: block; cursor: pointer; }
   letter-spacing: 0.02em;
   padding: 3px 0 1px;
 }
-#modifier-display .mod-label { font-weight: 700; color: #e0a84a; }
-#modifier-display .mod-none  { color: #363650; }
+#modifier-display .mod-label { font-weight: 700; color: #c9a435; }
+#modifier-display .mod-none  { color: #50402a; }
 </style>
 </head>
 <body>
@@ -227,8 +230,8 @@ canvas { display: block; cursor: pointer; }
 </div>
 
 <div id="legend">
-  <div class="leg"><div class="leg-dot" style="background:#4fc3f7"></div><span>You (blue)</span></div>
-  <div class="leg"><div class="leg-dot" style="background:#ef5350"></div><span>AI (red)</span></div>
+  <div class="leg"><div class="leg-dot" style="background:#1a6bb5"></div><span>You (blue)</span></div>
+  <div class="leg"><div class="leg-dot" style="background:#c0392b"></div><span>AI (red)</span></div>
   <div class="leg"><span>4 energy → explosion</span></div>
 </div>
 
@@ -249,18 +252,18 @@ const OVERFLOW    = 4;
 const CANVAS_SIZE = GRID * CELL + PAD * 2;
 
 const COLORS = {
-  bg:        '#0f0f23',
-  gridLine:  '#252545',
-  playerDot: '#4fc3f7',
-  aiDot:     '#ef5350',
-  hover:     'rgba(255,255,255,0.06)',
+  bg:        '#ede8dc',   // warm ivory — board surface and hidden-cell fill
+  gridLine:  '#c9a435',   // gold
+  playerDot: '#1a6bb5',   // royal sapphire
+  aiDot:     '#c0392b',   // deep ruby
+  hover:     'rgba(201,164,53,0.16)',  // gold shimmer
 };
 
 // Cell background colors as RGB triples — used for smooth interpolation.
 const BG_RGB = {
-  null:   [17,  17,  40],   // #111128
-  player: [12,  39,  64],   // #0c2740
-  ai:     [56,  12,  12],   // #380c0c
+  null:   [237, 232, 220],  // ivory marble
+  player: [210, 228, 248],  // blue-tinted marble
+  ai:     [248, 218, 214],  // red-tinted marble
 };
 
 // ─── Color Utilities ──────────────────────────────────────────────────────────
@@ -868,13 +871,17 @@ function drawCell(r, c) {
   }
 
   if (cell.blocked) {
-    ctx.fillStyle = '#090912';
+    // Dark stone tile with gold-tinted X
+    const bg = ctx.createLinearGradient(x, y, x + w, y + h);
+    bg.addColorStop(0, '#c4b89a');
+    bg.addColorStop(1, '#a89878');
+    ctx.fillStyle = bg;
     ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
-    ctx.strokeStyle = 'rgba(100,100,140,0.4)';
+    ctx.strokeStyle = 'rgba(140,105,30,0.55)';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(x + 9, y + 9); ctx.lineTo(x + w - 9, y + h - 9);
-    ctx.moveTo(x + w - 9, y + 9); ctx.lineTo(x + 9, y + h - 9);
+    ctx.moveTo(x + 12, y + 12); ctx.lineTo(x + w - 12, y + h - 12);
+    ctx.moveTo(x + w - 12, y + 12); ctx.lineTo(x + 12, y + h - 12);
     ctx.stroke();
     return;
   }
@@ -883,8 +890,30 @@ function drawCell(r, c) {
                       && state.phase === 'input' && state.turn === 'player'
                       && canPlay(state.grid, r, c, 'player');
 
+  // Base marble fill
   ctx.fillStyle = getCellBgColor(r, c);
   ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
+
+  // Polished surface sheen: bright top-left, subtle shadow bottom-right
+  const sheen = ctx.createLinearGradient(x, y, x + w, y + h);
+  sheen.addColorStop(0,    'rgba(255,255,255,0.18)');
+  sheen.addColorStop(0.38, 'rgba(255,255,255,0.05)');
+  sheen.addColorStop(1,    'rgba(0,0,0,0.07)');
+  ctx.fillStyle = sheen;
+  ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
+
+  // Subtle marble veins — deterministic per-cell diagonal strokes
+  const seed = r * 17 + c * 11;
+  ctx.lineWidth = 0.7;
+  for (let v = 0; v < 2; v++) {
+    const oy    = ((seed * (v * 19 + 7)) % (h - 12)) + 6;
+    const slope = 0.2 + ((seed * (v + 3)) % 9) * 0.05;
+    ctx.strokeStyle = `rgba(160,148,128,${0.07 - v * 0.02})`;
+    ctx.beginPath();
+    ctx.moveTo(x + 1,     y + oy);
+    ctx.lineTo(x + w - 1, y + oy + (w - 2) * slope);
+    ctx.stroke();
+  }
 
   if (isHoverable) {
     ctx.fillStyle = COLORS.hover;
@@ -895,7 +924,7 @@ function drawCell(r, c) {
 
   if (cell.energy === OVERFLOW - 1 && cell.owner) {
     const pulse = 0.5 + 0.5 * Math.sin(renderTime * 0.009 + (r * 7 + c * 3) * 0.6);
-    const rgb   = cell.owner === 'player' ? '79,195,247' : '239,83,80';
+    const rgb   = cell.owner === 'player' ? '26,107,181' : '192,57,43';
     const inset = 5 + pulse * 3;
     ctx.strokeStyle = `rgba(${rgb},${0.18 + 0.18 * pulse})`;
     ctx.lineWidth   = 1.5;
@@ -938,9 +967,17 @@ function drawCell(r, c) {
 }
 
 function drawGridLines() {
-  ctx.strokeStyle = COLORS.gridLine;
-  ctx.lineWidth   = 1.5;
-  for (let i = 0; i <= GRID; i++) {
+  // Outer border — thicker gold frame
+  ctx.strokeStyle = '#c9a435';
+  ctx.lineWidth   = 2.5;
+  ctx.shadowColor = 'rgba(201,164,53,0.55)';
+  ctx.shadowBlur  = 6;
+  ctx.strokeRect(PAD, PAD, GRID * CELL, GRID * CELL);
+
+  // Inner separator lines — thinner gold
+  ctx.lineWidth  = 1;
+  ctx.shadowBlur = 3;
+  for (let i = 1; i < GRID; i++) {
     ctx.beginPath();
     ctx.moveTo(PAD + i * CELL, PAD);
     ctx.lineTo(PAD + i * CELL, PAD + GRID * CELL);
@@ -950,6 +987,7 @@ function drawGridLines() {
     ctx.lineTo(PAD + GRID * CELL, PAD + i * CELL);
     ctx.stroke();
   }
+  ctx.shadowBlur = 0;
 }
 
 // Bright fill that fades on the cell that just exploded.
