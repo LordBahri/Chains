@@ -393,6 +393,29 @@ function playTickSound() {
   } catch (e) {}
 }
 
+function playRewardSound(steps) {
+  try {
+    if (!audioCtx) audioCtx = new AudioContext();
+    const ctx = audioCtx;
+    // Two-note rising chime: pitch scales mildly with chain length
+    const base = 480 + Math.min(steps, 6) * 18;
+    [[base, 0], [base * 1.5, 55]].forEach(([freq, delay]) => {
+      const t   = ctx.currentTime + delay / 1000;
+      const osc = ctx.createOscillator();
+      osc.type  = 'sine';
+      osc.frequency.setValueAtTime(freq, t);
+      osc.frequency.exponentialRampToValueAtTime(freq * 0.9, t + 0.12);
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.09, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 0.18);
+    });
+  } catch (e) {}
+}
+
 // Pentatonic scale intervals (semitones): 0,2,4,7,9,12,14,16,19,21
 const CHAIN_SEMITONES = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21];
 function playChainTone(step) {
@@ -1083,6 +1106,8 @@ async function runMove(r, c, player, tick) {
   if (state.grid[r][c].energy === OVERFLOW - 1) playTickSound();
 
   const { steps, final } = resolveChains(state.grid);
+  let totalEarned = 0;
+  let lastPlayerStep = null;
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
     if (step.owner === 'player') {
@@ -1090,8 +1115,8 @@ async function runMove(r, c, player, tick) {
       state.score += earned;
       state.multiplier++;
       state.chains++;
-      spawnFloatText(step.r, step.c, `+${earned}`, COLORS.playerDot);
-      updateScoreDisplay();
+      totalEarned += earned;
+      lastPlayerStep = step;
     }
     const isBig  = i >= 3;
     const pitch  = Math.pow(1.18, i) * (isBig ? 0.7 : 1);
@@ -1107,10 +1132,19 @@ async function runMove(r, c, player, tick) {
     applyOwnerTransitions(prev, state.grid);
   }
   if (gameId !== tick) return null;
+
+  // Brief beat after chain settles, then show total reward in one pop.
+  if (totalEarned > 0) {
+    await sleep(150);
+    if (gameId !== tick) return null;
+    spawnFloatText(lastPlayerStep.r, lastPlayerStep.c, `+${totalEarned}`, COLORS.playerDot);
+    playRewardSound(steps.length);
+  }
+
   if (player === 'player') {
     state.multiplier = 1;
-    updateScoreDisplay();
   }
+  updateScoreDisplay();
   state.grid = final;
   state.moves++;
 
