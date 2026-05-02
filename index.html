@@ -291,16 +291,17 @@ function makeTrGrid() {
 // ─── Animation: Spawners ──────────────────────────────────────────────────────
 
 // Three staggered rings + a cell flash, fired when a cell explodes.
-function spawnExplosion(r, c, owner) {
+function spawnExplosion(r, c, owner, depth = 0) {
   const [x, y, w, h] = cellRect(r, c);
   const cx = x + w/2, cy = y + h/2;
   const color = ownerDotColor(owner);
   const now = performance.now();
+  const d = Math.min(depth, 6);
 
   for (let i = 0; i < 3; i++) {
-    effects.push({ x: cx, y: cy, color, born: now + i * 75, life: 430 });
+    effects.push({ x: cx, y: cy, color, born: now + i * 75, life: 430, depth: d });
   }
-  flashes.push({ r, c, color, born: now, life: 220 });
+  flashes.push({ r, c, color, born: now, life: 220 + d * 12, depth: d });
 }
 
 // ─── Audio ────────────────────────────────────────────────────────────────────
@@ -349,8 +350,8 @@ function playExplosionSound(pitch = 1, volume = 0.28) {
 }
 
 // Trigger animation and sound together.
-function explode(r, c, owner, pitch = 1, volume = 0.28) {
-  spawnExplosion(r, c, owner);
+function explode(r, c, owner, pitch = 1, volume = 0.28, depth = 0) {
+  spawnExplosion(r, c, owner, depth);
   playExplosionSound(pitch, volume);
 }
 
@@ -933,11 +934,12 @@ function drawFlashes(timestamp) {
   flashes = flashes.filter(f => {
     const t = (timestamp - f.born) / f.life;
     if (t >= 1) return false;
+    const d = f.depth || 0;
     const [x, y, w, h] = cellRect(f.r, f.c);
-    ctx.globalAlpha = (1 - t) * 0.65;
+    ctx.globalAlpha = (1 - t) * (0.65 + d * 0.018);
     ctx.fillStyle   = f.color;
     ctx.shadowColor = f.color;
-    ctx.shadowBlur  = 22;
+    ctx.shadowBlur  = 22 + d * 2.5;
     ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
     ctx.globalAlpha = 1;
     ctx.shadowBlur  = 0;
@@ -1013,13 +1015,14 @@ function drawEffects(timestamp) {
     const t = (timestamp - effect.born) / effect.life;
     if (t < 0)  return true;   // delayed ring not yet started
     if (t >= 1) return false;
-    ctx.globalAlpha = (1 - t) * 0.8;
+    const d = effect.depth || 0;
+    ctx.globalAlpha = (1 - t) * (0.8 + d * 0.02);
     ctx.strokeStyle = effect.color;
     ctx.shadowColor = effect.color;
-    ctx.shadowBlur  = 14;
-    ctx.lineWidth   = 2.5;
+    ctx.shadowBlur  = 14 + d * 2;
+    ctx.lineWidth   = 2.5 + d * 0.25;
     ctx.beginPath();
-    ctx.arc(effect.x, effect.y, 5 + t * 38, 0, Math.PI * 2);
+    ctx.arc(effect.x, effect.y, 5 + t * (38 + d * 3), 0, Math.PI * 2);
     ctx.stroke();
     ctx.globalAlpha = 1;
     ctx.shadowBlur  = 0;
@@ -1093,7 +1096,7 @@ async function runMove(r, c, player, tick) {
     const isBig  = i >= 3;
     const pitch  = Math.pow(1.18, i) * (isBig ? 0.7 : 1);
     const volume = Math.min(0.42, 0.28 + i * 0.025);
-    explode(step.r, step.c, step.owner, pitch, volume);
+    explode(step.r, step.c, step.owner, pitch, volume, i);
     if (steps.length > 1) playChainTone(i);
     spawnParticles(step.r, step.c, step.owner);
     triggerShake(i + 1);
